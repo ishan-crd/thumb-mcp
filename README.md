@@ -114,6 +114,7 @@ round trip.
 
 | Tool | What it does |
 |---|---|
+| `send_whatsapp(recipient, text, contact_index=1, send=False)` | **Send a WhatsApp message.** Opens WhatsApp → New chat → search → open chat → type. Drafts by default |
 | `send_message(recipient, text, send=False)` | **Send a text.** Opens Messages → New Message → resolves the recipient to a real contact → types the body. Stops there by default and returns a screenshot to confirm; only sends with `send=true` |
 | `search_in_app(app, query)` | **Open an app and search inside it in one call** — Home → Spotlight → launch → Search tab → search field → type. No intermediate screenshots |
 | `open_app(name)` | Home → Spotlight → type → launch top hit. One call, ~6s |
@@ -144,6 +145,35 @@ the layout — it replaces a swipe-and-screenshot loop with a single call.
 
 Composite flows already settle internally, so `wait_until_settled()` is only
 needed after a raw `tap`/`swipe`.
+
+### One command per app, not one generic "messenger"
+
+Messaging apps look similar and are laid out nothing alike, so each gets its own
+explicitly named command rather than a shared abstraction that fits neither:
+
+| Say | Command |
+|---|---|
+| "text Rohit hi" / "message Rohit on iMessage" | `send_message` |
+| "send Rohit a WhatsApp saying Hi" | `send_whatsapp` |
+| "search Instagram for akshit" | `search_in_app("instagram", …)` |
+
+They share the same *shape* — open → resolve recipient → draft → confirm → send
+— and the same building blocks (`open_app`, `settle`, `wait_for_band`,
+`clear_field`), but each has its own landmarks and steps.
+
+Concretely, why they can't share one implementation:
+
+* **Messages** has no tab bar, its list search is at the *bottom*, and searching
+  matches message *text* rather than contacts — so the sender must go through
+  the compose sheet's `To:` field.
+* **WhatsApp** has a 5-tab bar, a green "+" that opens its own "New chat" sheet
+  with a separate search, and the send button replaces the mic.
+
+**WhatsApp does not rank exact matches first.** Searching "Rohit" returns
+`Rohit sir COA`, `rohit mummy`, `Rohit`, `Tiya Rohit Nepi` — in that order.
+Row 1 is the wrong person. That is exactly why `send_whatsapp` drafts by default
+and takes a `contact_index`: confirm the chat header in the screenshot, then
+re-run with the right row and `send=true`.
 
 ### Sending a message safely
 

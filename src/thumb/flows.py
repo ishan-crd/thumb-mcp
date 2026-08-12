@@ -235,8 +235,13 @@ def open_app(session, name: str, timeout_s: float = 8.0):
             session.frame().image,
         )
 
-    blank = session.frame().image
+    # Capture the empty-Spotlight reference *after* clearing, not before.
+    # Spotlight retains the previous query, so a "blank" snapshot taken first
+    # still shows the old results -- retyping the same app then produces an
+    # identical screen and the did-the-typing-land check false-negatives.
     clear_field(pid)
+    settle(session, timeout_s=2.0, stable_for_s=0.25)
+    blank = session.frame().image
     inputs.type_text(pid, app)
     settle(session, timeout_s=3.0, stable_for_s=0.3)
     results = session.frame().image
@@ -247,6 +252,8 @@ def open_app(session, name: str, timeout_s: float = 8.0):
     if mirror.frame_difference(blank, results) < CHANGED:
         inputs.focus(pid)
         clear_field(pid)
+        settle(session, timeout_s=2.0, stable_for_s=0.25)
+        blank = session.frame().image
         inputs.type_text(pid, app)
         settle(session, timeout_s=3.0, stable_for_s=0.3)
         results = session.frame().image
@@ -522,3 +529,121 @@ def send_message(session, recipient: str, text: str, send: bool = False):
             image,
         )
     return f"Sent {text!r} to {recipient!r} ({status}).", image
+
+
+# --------------------------------------------------------------------------
+# WhatsApp
+# --------------------------------------------------------------------------
+#
+# Same shape as the Messages sender -- open -> pick recipient -> draft -> send,
+# with sending opt-in -- but WhatsApp's chrome is entirely different, so it gets
+# its own steps rather than a shared "generic messenger" abstraction that would
+# fit neither app well.
+
+def open_whatsapp_new_chat(session):
+    """Open WhatsApp and bring up the "New chat" sheet."""
+    report, image = open_app(session, "WhatsApp")
+    if "Could not" in report:
+        return False, report, image
+    settle(session, timeout_s=4.0, stable_for_s=0.35)
+
+    # WhatsApp resumes inside whatever chat was last open. Same idempotent
+    # unwind as Messages: the back chevron returns to the chat list, and on the
+    # list that spot is the "..." menu, which Escape closes.
+    pid = session.live_frame().window.pid
+    inputs.press_key(pid, "escape")
+    settle(session, timeout_s=2.0, stable_for_s=0.2)
+    tap_at(session, *landmarks.WA_BACK_BUTTON)
+    settle(session, timeout_s=2.5, stable_for_s=0.25)
+    inputs.press_key(pid, "escape")
+    settle(session, timeout_s=2.0, stable_for_s=0.2)
+
+    tap_at(session, *landmarks.WA_CHATS_TAB)
+    settle(session, timeout_s=3.0, stable_for_s=0.25)
+
+    before = session.frame().image
+    tap_at(session, *landmarks.WA_NEW_CHAT_BUTTON)
+    _, image = settle(session, timeout_s=4.0)
+    if not _changed_since(session, before):
+        return False, "Tapped New chat but the sheet never appeared.", image
+    return True, "WhatsApp New chat sheet open.", image
+
+
+def pick_whatsapp_contact(session, recipient: str, index: int = 1):
+    """Search the New chat sheet and open the index-th matching contact.
+
+    ``index`` exists because WhatsApp does not put the exact match first --
+    searching "Rohit" lists "Rohit sir COA" above plain "Rohit". Defaulting to
+    row 1 and sending blind would message the wrong person, so callers confirm
+    from the draft screenshot and bump the index if needed.
+    """
+    tap_at(session, *landmarks.WA_SEARCH_FIELD)
+    settle(session, timeout_s=3.0, stable_for_s=0.25)
+    pid = session.live_frame().window.pid
+    clear_field(pid)
+    inputs.type_text(pid, recipient)
+
+    top, bottom = landmarks.WA_RESULT_BAND
+    found, image = wait_for_band(session, top, bottom, want_content=True, timeout_s=6.0)
+    if not found:
+        return (
+            False,
+            f"No WhatsApp contact matching {recipient!r} -- the result list "
+            "stayed empty.",
+            image,
+        )
+
+    tap_at(session, *landmarks.wa_result(index))
+    _, image = settle(session, timeout_s=5.0, stable_for_s=0.3)
+    return (
+        True,
+        f"Opened WhatsApp result #{index} for {recipient!r} (WhatsApp does not "
+        "rank exact matches first -- check the chat header in the screenshot).",
+        image,
+    )
+
+
+def draft_whatsapp(session, recipient: str, text: str, index: int = 1):
+    """Open WhatsApp, pick the recipient, and type the message -- without sending."""
+    ok, report, image = open_whatsapp_new_chat(session)
+    if not ok:
+        return False, report, image
+
+    ok, report, image = pick_whatsapp_contact(session, recipient, index)
+    if not ok:
+        return False, report, image
+
+    tap_at(session, *landmarks.WA_BODY_FIELD)
+    settle(session, timeout_s=3.0, stable_for_s=0.25)
+    pid = session.live_frame().window.pid
+    clear_field(pid, 60)
+    inputs.type_text(pid, text)
+    status, image = settle(session, timeout_s=4.0, stable_for_s=0.3)
+    return True, f"Drafted {text!r} to {recipient!r} on WhatsApp ({status}).", image
+
+
+def send_whatsapp(
+    session, recipient: str, text: str, index: int = 1, send: bool = False
+):
+    """Draft a WhatsApp message and, only if ``send`` is true, send it."""
+    ok, report, image = draft_whatsapp(session, recipient, text, index)
+    if not ok:
+        return report, image
+    if not send:
+        return (
+            report + " NOT SENT -- confirm the chat header is the right person "
+            "(WhatsApp does not rank exact matches first; pass contact_index to "
+            "pick a different row), then call again with send=true.",
+            image,
+        )
+
+    before = session.frame().image
+    tap_at(session, *landmarks.WA_SEND_BUTTON)
+    status, image = settle(session, timeout_s=5.0, stable_for_s=0.35)
+    if not _changed_since(session, before):
+        return (
+            f"Pressed Send but the screen did not change ({status}) -- the "
+            "message may not have gone. Check the screenshot.",
+            image,
+        )
+    return f"Sent {text!r} to {recipient!r} on WhatsApp ({status}).", image

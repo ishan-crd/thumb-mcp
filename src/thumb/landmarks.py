@@ -63,6 +63,37 @@ MSG_SUGGESTION_BAND = (0.24, 0.85)
 
 
 # --------------------------------------------------------------------------
+# WhatsApp
+# --------------------------------------------------------------------------
+#
+# WhatsApp is laid out nothing like Messages: a 5-tab bar, a green "+" that
+# opens a "New chat" sheet with its own search, and the send button replaces the
+# mic inside the input row.
+#
+# One difference matters for safety: WhatsApp does NOT rank an exact name match
+# first. Searching "Rohit" returns "Rohit sir COA", "rohit mummy", "Rohit",
+# "Tiya Rohit Nepi" -- in that order. Taking row 1 messages the wrong person, so
+# the sender exposes a row index and drafts rather than sending by default.
+
+WA_CHATS_TAB = (0.684, 0.940)         # 4th of 5 tabs
+WA_NEW_CHAT_BUTTON = (0.904, 0.095)   # green "+"
+WA_SEARCH_FIELD = (0.5, 0.179)        # "Name, number, @username"
+WA_FIRST_RESULT = (0.5, 0.238)        # first row under "Contacts on WhatsApp"
+WA_RESULT_PITCH = 0.0595              # vertical distance between result rows
+WA_BODY_FIELD = (0.389, 0.930)
+WA_SEND_BUTTON = (0.937, 0.930)       # green arrow, replaces the mic
+WA_BACK_BUTTON = (0.086, 0.095)       # "<" in a chat; "..." on the chat list
+WA_RESULT_BAND = (0.20, 0.85)
+
+
+def wa_result(index: int) -> tuple[float, float]:
+    """Centre of the index-th (1-based) WhatsApp search result row."""
+    index = max(1, index)
+    x, y = WA_FIRST_RESULT
+    return x, y + (index - 1) * WA_RESULT_PITCH
+
+
+# --------------------------------------------------------------------------
 # Per-app layouts
 # --------------------------------------------------------------------------
 
@@ -92,6 +123,8 @@ APP_PROFILES: tuple[AppProfile, ...] = (
                aliases=("imessage", "text", "sms")),
     AppProfile("Spotify", search_tab=(2, 3), aliases=("spot",)),
     AppProfile("Threads", search_tab=(2, 5)),
+    AppProfile("WhatsApp", search_tab=(4, 5), search_field=WA_SEARCH_FIELD,
+               aliases=("wa", "whats app", "whatsap")),
     AppProfile("X", search_tab=(2, 5), aliases=("twitter",)),
     AppProfile("YouTube", search_tab=(2, 5), search_field=(0.5, 0.07),
                aliases=("yt",)),

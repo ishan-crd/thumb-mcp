@@ -430,7 +430,26 @@ def search_in_app(
 
 @server.tool(
     description=(
-        "Send a text message. Opens Messages, starts a new message, resolves "
+        "Send a WhatsApp message. Opens WhatsApp, starts a new chat, searches "
+        "the recipient, opens that chat and types the body. By default it STOPS "
+        "THERE and returns a screenshot to confirm -- call again with send=true "
+        "to actually send. WhatsApp does not rank exact name matches first, so "
+        "if the chat header shows the wrong person, retry with contact_index=2, "
+        "3, ... to pick a different search result."
+    )
+)
+@_focus_safe
+def send_whatsapp(
+    recipient: str, text: str, contact_index: int = 1, send: bool = False
+) -> list[TextContent | ImageContent]:
+    report, image = flows.send_whatsapp(SESSION, recipient, text, contact_index, send)
+    return _shot(image, report)
+
+
+@server.tool(
+    description=(
+        "Send a text message through the built-in Messages app (iMessage/SMS). "
+        "For WhatsApp use send_whatsapp instead. Opens Messages, starts a new message, resolves "
         "the recipient to a real contact, and types the body. By default it "
         "STOPS THERE and returns a screenshot so you can confirm who it "
         "resolved to and what it says -- call again with send=true to actually "
