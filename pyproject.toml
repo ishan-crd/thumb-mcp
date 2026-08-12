@@ -1,13 +1,13 @@
 [project]
-name = "iphone-mirror-mcp"
+name = "thumb-mcp"
 version = "0.1.0"
-description = "MCP server that lets Claude control an iPhone via the macOS iPhone Mirroring app"
+description = "Control your iPhone from Claude through the macOS iPhone Mirroring app"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
     { name = "ishan-crd", email = "ishangupta3121@gmail.com" }
 ]
-keywords = ["mcp", "iphone", "macos", "automation", "claude"]
+keywords = ["mcp", "iphone", "ios", "macos", "automation", "claude"]
 requires-python = ">=3.11"
 dependencies = [
     "mcp>=2.0.0",
@@ -17,9 +17,18 @@ dependencies = [
     "pyobjc-framework-quartz>=10.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/ishan-crd/thumb-mcp"
+Repository = "https://github.com/ishan-crd/thumb-mcp"
+
 [project.scripts]
-iphone-mirror-mcp = "iphone_mirror_mcp.server:main"
+thumb-mcp = "thumb.server:main"
 
 [build-system]
 requires = ["uv_build>=0.12.3,<0.13.0"]
 build-backend = "uv_build"
+
+# The distribution is "thumb-mcp" but the import package is just "thumb", so the
+# backend needs telling -- it would otherwise look for a "thumb_mcp" module.
+[tool.uv.build-backend]
+module-name = "thumb"

@@ -29,7 +29,7 @@ from .mirror import Frame
 TRANSIENT_WAIT_S = 12.0
 
 server = MCPServer(
-    name="iphone-mirror",
+    name="thumb",
     version="0.1.0",
     instructions=(
         "Controls a physical iPhone through the macOS iPhone Mirroring app.\n\n"
@@ -425,6 +425,23 @@ def search_in_app(
     tab_count: int | None = None,
 ) -> list[TextContent | ImageContent]:
     report, image = flows.search_in_app(SESSION, app, query, tab_index, tab_count)
+    return _shot(image, report)
+
+
+@server.tool(
+    description=(
+        "Send a text message. Opens Messages, starts a new message, resolves "
+        "the recipient to a real contact, and types the body. By default it "
+        "STOPS THERE and returns a screenshot so you can confirm who it "
+        "resolved to and what it says -- call again with send=true to actually "
+        "send. Fails loudly if no contact matches the name."
+    )
+)
+@_focus_safe
+def send_message(
+    recipient: str, text: str, send: bool = False
+) -> list[TextContent | ImageContent]:
+    report, image = flows.send_message(SESSION, recipient, text, send)
     return _shot(image, report)
 
 

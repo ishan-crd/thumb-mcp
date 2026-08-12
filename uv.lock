@@ -272,27 +272,6 @@ wheels = [
 ]
 
 [[package]]
-name = "iphone-mirror-mcp"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "mcp" },
-    { name = "pillow" },
-    { name = "pyobjc-framework-applicationservices" },
-    { name = "pyobjc-framework-cocoa" },
-    { name = "pyobjc-framework-quartz" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "mcp", specifier = ">=2.0.0" },
-    { name = "pillow", specifier = ">=10.0" },
-    { name = "pyobjc-framework-applicationservices", specifier = ">=10.0" },
-    { name = "pyobjc-framework-cocoa", specifier = ">=10.0" },
-    { name = "pyobjc-framework-quartz", specifier = ">=10.0" },
-]
-
-[[package]]
 name = "jsonschema"
 version = "4.26.0"
 source = { registry = "https://pypi.org/simple" }
@@ -884,6 +863,27 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b5/b4/205b0d5241d934e8add0c38aa924c4f9fb7330834ff11e5444db964ec3f9/starlette-1.6.0.tar.gz", hash = "sha256:d4e3ac5e546444960c710297a3c9fc3f7ebae1b7e963f3d36173b49da535be9b", size = 2716969, upload-time = "2026-08-08T18:27:57.512Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/cb/6a6a47d5b464bd08695d254f3da6e7986cc70c9fa5d778eda57538edfe56/starlette-1.6.0-py3-none-any.whl", hash = "sha256:a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c", size = 75969, upload-time = "2026-08-08T18:27:56.196Z" },
+]
+
+[[package]]
+name = "thumb-mcp"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "mcp" },
+    { name = "pillow" },
+    { name = "pyobjc-framework-applicationservices" },
+    { name = "pyobjc-framework-cocoa" },
+    { name = "pyobjc-framework-quartz" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mcp", specifier = ">=2.0.0" },
+    { name = "pillow", specifier = ">=10.0" },
+    { name = "pyobjc-framework-applicationservices", specifier = ">=10.0" },
+    { name = "pyobjc-framework-cocoa", specifier = ">=10.0" },
+    { name = "pyobjc-framework-quartz", specifier = ">=10.0" },
 ]
 
 [[package]]

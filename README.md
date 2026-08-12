@@ -1,8 +1,12 @@
-# iphone-mirror-mcp
+# thumb-mcp
 
-An MCP server that lets Claude see and control a physical iPhone through the
-macOS **iPhone Mirroring** app. Claude gets a screenshot tool plus tap, swipe,
-typing, and the Home / App Switcher / Spotlight commands.
+Control your iPhone from Claude, through the macOS **iPhone Mirroring** app.
+
+Claude gets the primitives — screenshot, tap, swipe, type — plus one-call
+shortcuts for the things you actually ask for: `open_app("insta")`,
+`search_in_app("instagram", "akshit")`, `scroll("down")`. Shortcuts drive the
+phone from a table of known UI positions instead of screenshotting between every
+step, so a "open X and search Y" request is one round trip, not ten.
 
 No jailbreak, no developer profile, no WebDriverAgent — it drives the same
 mirroring window you already use by hand.
@@ -26,14 +30,14 @@ refuses to connect, that is an Apple-side restriction, not this server.
 ## Install
 
 ```bash
-git clone <this-repo> && cd screenmirrormcp
+git clone https://github.com/ishan-crd/thumb-mcp && cd thumb-mcp
 uv sync
 ```
 
 Verify everything before wiring it into Claude:
 
 ```bash
-uv run python -c "import iphone_mirror_mcp.server as s; print(s.device_info())"
+uv run python -c "import thumb.server as s; print(s.device_info())"
 ```
 
 That prints permissions, window geometry, the detected coordinate space, and
@@ -75,7 +79,7 @@ pane name rather than misbehaving quietly.
 **Claude Code**
 
 ```bash
-claude mcp add iphone-mirror -- uv --directory /absolute/path/to/screenmirrormcp run iphone-mirror-mcp
+claude mcp add thumb -- uv --directory /absolute/path/to/thumb-mcp run thumb-mcp
 ```
 
 **Claude Desktop** — `~/Library/Application Support/Claude/claude_desktop_config.json`:
@@ -83,11 +87,11 @@ claude mcp add iphone-mirror -- uv --directory /absolute/path/to/screenmirrormcp
 ```json
 {
   "mcpServers": {
-    "iphone-mirror": {
+    "thumb": {
       "command": "uv",
       "args": [
-        "--directory", "/absolute/path/to/screenmirrormcp",
-        "run", "iphone-mirror-mcp"
+        "--directory", "/absolute/path/to/thumb-mcp",
+        "run", "thumb-mcp"
       ]
     }
   }
@@ -110,6 +114,7 @@ round trip.
 
 | Tool | What it does |
 |---|---|
+| `send_message(recipient, text, send=False)` | **Send a text.** Opens Messages → New Message → resolves the recipient to a real contact → types the body. Stops there by default and returns a screenshot to confirm; only sends with `send=true` |
 | `search_in_app(app, query)` | **Open an app and search inside it in one call** — Home → Spotlight → launch → Search tab → search field → type. No intermediate screenshots |
 | `open_app(name)` | Home → Spotlight → type → launch top hit. One call, ~6s |
 | `tap_and_type(x, y, text)` | Focus a field and type, waiting for focus first |
@@ -139,6 +144,26 @@ the layout — it replaces a swipe-and-screenshot loop with a single call.
 
 Composite flows already settle internally, so `wait_until_settled()` is only
 needed after a raw `tap`/`swipe`.
+
+### Sending a message safely
+
+`send_message` is the most dangerous shortcut in here — a text is irreversible
+and goes to a real person — so it is built to refuse rather than guess:
+
+* **Drafts by default.** `send=False` composes the message and returns a
+  screenshot showing the resolved recipient and body. You send by calling again
+  with `send=true`.
+* **Proves it is on a blank New Message sheet** before typing a recipient. This
+  is the one that matters: iOS resumes Messages *inside a conversation*, where
+  the `To:` tap does nothing and focus stays on the message body — so the
+  recipient name gets typed into the message. That produced a real garbled
+  send ("Rohit" + "hi" → "Rohithi") during development.
+* **Clears the body first**, so a leftover draft from an aborted run cannot get
+  the new text appended to it.
+* **Fails loudly when no contact matches**, instead of sending to a raw string.
+
+Note it selects the *first* matching contact. If several people share a name,
+the confirmation screenshot is how you check which one it picked.
 
 ### Adding a shortcut
 

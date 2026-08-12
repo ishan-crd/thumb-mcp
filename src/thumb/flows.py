@@ -27,6 +27,7 @@ from __future__ import annotations
 import time
 
 from PIL import Image as PILImage
+from PIL import ImageStat
 
 from . import ax, inputs, landmarks, mirror
 from .errors import MirrorError
@@ -322,3 +323,202 @@ def survey_home(session, max_pages: int = 4):
             break
         pages.append((f"page {index}", current))
     return pages
+
+
+# --------------------------------------------------------------------------
+# Messages
+# --------------------------------------------------------------------------
+#
+# Composed from small named steps rather than one long script, so each piece is
+# testable and reusable: open_compose -> pick_contact -> draft_message ->
+# send_message. Sending is deliberately opt-in; see send_message.
+
+def _band_detail(image, top: float, bottom: float) -> float:
+    """How much visual content a horizontal band holds (0 = flat empty space).
+
+    Used instead of a before/after diff to decide whether a suggestion list
+    appeared. A single matching row barely moves a whole-frame difference, so
+    the differential test produced false "no matches"; asking whether the band
+    contains *anything* is absolute and does not depend on what was there
+    before.
+    """
+    height = image.height
+    box = (0, int(height * top), image.width, int(height * bottom))
+    return ImageStat.Stat(image.crop(box).convert("L")).stddev[0]
+
+
+# Empty dark space measures well under 1; a single contact row is several times
+# this. Set between the two.
+BAND_HAS_CONTENT = 3.0
+
+
+def wait_for_band(session, top, bottom, want_content: bool, timeout_s: float = 6.0):
+    """Poll until a band is (or stops being) populated. Returns (ok, frame).
+
+    Waiting for the *condition we actually care about* beats settling and hoping.
+    Contact suggestions render noticeably after the keystrokes land, so a
+    settle() returns on a stable-but-empty screen and the following tap hits
+    nothing; this returns the moment the list appears, so it is both faster and
+    not a race.
+    """
+    deadline = time.monotonic() + timeout_s
+    image = session.frame().image
+    while True:
+        image = session.frame().image
+        if (_band_detail(image, top, bottom) >= BAND_HAS_CONTENT) == want_content:
+            return True, image
+        if time.monotonic() >= deadline:
+            return False, image
+        time.sleep(0.1)
+
+
+def open_compose(session):
+    """Open Messages and bring up the New Message sheet."""
+    report, image = open_app(session, "Messages")
+    if "Could not" in report:
+        return False, report, image
+    # Messages paints its list progressively; the capped launch settle can
+    # return while the screen is still blank.
+    settle(session, timeout_s=4.0, stable_for_s=0.35)
+
+    # iOS resumes an app wherever it was left -- often inside a conversation, or
+    # on a half-filled compose sheet. Get back to the conversation list before
+    # doing anything, or the compose tap lands in a conversation and the
+    # recipient ends up typed into the message body.
+    #
+    # Neither Escape nor the left-edge back swipe reliably leaves a conversation
+    # (the swipe simply does not register through mirroring), but the back
+    # chevron does. That same spot is "Edit" on the conversation list, so tap it
+    # and then press Escape: from a conversation we land on the list and Escape
+    # is a no-op; from the list we open the Edit menu and Escape closes it.
+    # Either way we end up on the list, without needing to know which we started
+    # from.
+    pid = session.live_frame().window.pid
+    inputs.press_key(pid, "escape")
+    settle(session, timeout_s=2.0, stable_for_s=0.2)
+    tap_at(session, *landmarks.MSG_BACK_BUTTON)
+    settle(session, timeout_s=2.5, stable_for_s=0.25)
+    inputs.press_key(pid, "escape")
+    settle(session, timeout_s=2.0, stable_for_s=0.2)
+
+    before = session.frame().image
+    tap_at(session, *landmarks.MSG_COMPOSE_BUTTON)
+    _, image = settle(session, timeout_s=4.0)
+    if not _changed_since(session, before):
+        return False, "Tapped Compose but the New Message sheet never appeared.", image
+    # The sheet animates in over the list; wait for it to actually be blank
+    # rather than judging it mid-transition.
+    top_band, bottom_band = landmarks.MSG_SUGGESTION_BAND
+    _, image = wait_for_band(
+        session, top_band, bottom_band, want_content=False, timeout_s=3.0
+    )
+
+    # A fresh New Message sheet is blank below the "To:" field. A conversation
+    # view is full of bubbles. Distinguishing them matters enormously: in a
+    # conversation, the "To:" tap does nothing and keyboard focus stays on the
+    # message body, so the recipient name gets typed into the message itself.
+    top, bottom = landmarks.MSG_SUGGESTION_BAND
+    if _band_detail(image, top, bottom) >= BAND_HAS_CONTENT:
+        return (
+            False,
+            "Expected a blank New Message sheet but the screen has content "
+            "below the To: field -- Messages is probably showing a conversation, "
+            "not the compose sheet. Aborting rather than typing into it.",
+            image,
+        )
+    return True, "New Message sheet open.", image
+
+
+def pick_contact(session, recipient: str):
+    """Type a name into "To:" and select the first matching contact.
+
+    Returns (ok, report, image). Fails loudly when nothing matches: Messages
+    leaves the typed text sitting in the field as a raw address, and sending to
+    that would go to the wrong place -- or nowhere.
+    """
+    top, bottom = landmarks.MSG_SUGGESTION_BAND
+    if _band_detail(session.frame().image, top, bottom) >= BAND_HAS_CONTENT:
+        return (
+            False,
+            "Not on a blank New Message sheet -- there is already content below "
+            "the To: field. Refusing to type a recipient here, because it would "
+            "go into the message body instead.",
+            session.frame().image,
+        )
+
+    tap_at(session, *landmarks.MSG_TO_FIELD)
+    settle(session, timeout_s=3.0, stable_for_s=0.25)
+    pid = session.live_frame().window.pid
+    clear_field(pid)
+    inputs.type_text(pid, recipient)
+
+    found, typed = wait_for_band(session, top, bottom, want_content=True, timeout_s=6.0)
+    if not found:
+        return (
+            False,
+            f"No contact matching {recipient!r} -- the suggestion list stayed "
+            "empty, so there is nobody to send to. Check the name, or add the "
+            "contact on the phone.",
+            typed,
+        )
+
+    tap_at(session, *landmarks.MSG_FIRST_CONTACT)
+    _, image = settle(session, timeout_s=4.0, stable_for_s=0.3)
+    return (
+        True,
+        f"Selected the first contact matching {recipient!r} (there may be "
+        "several; the confirmation screenshot shows which one).",
+        image,
+    )
+
+
+def draft_message(session, recipient: str, text: str):
+    """Open Messages, pick the recipient, and type the body -- without sending."""
+    ok, report, image = open_compose(session)
+    if not ok:
+        return False, report, image
+
+    ok, report, image = pick_contact(session, recipient)
+    if not ok:
+        return False, report, image
+
+    tap_at(session, *landmarks.MSG_BODY_FIELD)
+    settle(session, timeout_s=3.0, stable_for_s=0.25)
+    pid = session.live_frame().window.pid
+    # iOS keeps a per-conversation draft. Without clearing, a leftover body from
+    # an earlier aborted run gets the new text appended to it and sent as one
+    # garbled message.
+    clear_field(pid, 60)
+    inputs.type_text(pid, text)
+    status, image = settle(session, timeout_s=4.0, stable_for_s=0.3)
+    return True, f"Drafted {text!r} to {recipient!r} ({status}).", image
+
+
+def send_message(session, recipient: str, text: str, send: bool = False):
+    """Draft a message and, only if ``send`` is true, actually send it.
+
+    Sending a text is irreversible and goes to a real person, so the default is
+    to stop at the drafted state and hand back a screenshot showing exactly who
+    the recipient resolved to and what the body says. The caller confirms, then
+    re-runs with send=True.
+    """
+    ok, report, image = draft_message(session, recipient, text)
+    if not ok:
+        return report, image
+    if not send:
+        return (
+            report + " NOT SENT -- check the recipient and text in this "
+            "screenshot, then call again with send=true to send it.",
+            image,
+        )
+
+    before = session.frame().image
+    tap_at(session, *landmarks.MSG_SEND_BUTTON)
+    status, image = settle(session, timeout_s=5.0, stable_for_s=0.35)
+    if not _changed_since(session, before):
+        return (
+            f"Pressed Send but the screen did not change ({status}) -- the "
+            "message may not have gone. Check the screenshot.",
+            image,
+        )
+    return f"Sent {text!r} to {recipient!r} ({status}).", image

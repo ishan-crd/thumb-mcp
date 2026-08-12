@@ -37,6 +37,24 @@ MENU_HOME = "Home Screen"
 MENU_APP_SWITCHER = "App Switcher"
 MENU_SPOTLIGHT = "Spotlight"
 
+# Text that genuinely means "this window is not showing the phone right now".
+INTERSTITIAL_PATTERNS = (
+    "iphone in use",
+    "connection paused",
+    "connecting",
+    "resuming",
+    "reconnecting",
+    "welcome to iphone mirroring",
+    "lock your iphone",
+    "mirroring ended",
+    "unable to connect",
+    "iphone unavailable",
+    "trust this",
+)
+
+# Buttons that only ever appear on a resume/connect interstitial.
+RESUME_BUTTONS = {"connect", "resume", "try again", "continue"}
+
 
 def ensure_accessibility() -> None:
     if not AXIsProcessTrusted():
@@ -94,7 +112,17 @@ def detect_overlay(pid: int) -> Overlay | None:
                 walk(child, depth + 1)
 
         walk(window)
-        if texts or buttons:
+        if not (texts or buttons):
+            return None
+
+        # Not every AX node means "not streaming". The window also exposes
+        # transient things -- notification previews, tooltips -- while the phone
+        # is mirroring perfectly well, and treating those as interstitials
+        # aborts flows mid-run. Only report a real one.
+        message = " ".join(texts).lower()
+        if any(pattern in message for pattern in INTERSTITIAL_PATTERNS):
+            return Overlay(texts=texts, buttons=buttons)
+        if any(b.strip().lower() in RESUME_BUTTONS for b in buttons):
             return Overlay(texts=texts, buttons=buttons)
         return None
     return None

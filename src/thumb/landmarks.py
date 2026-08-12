@@ -41,6 +41,28 @@ def nav_slot(index: int, count: int = 5) -> tuple[float, float]:
 
 
 # --------------------------------------------------------------------------
+# Messages
+# --------------------------------------------------------------------------
+#
+# Messages has no bottom tab bar, and on iOS 18/26 its conversation-list search
+# field sits at the *bottom*, not the top. Sending is driven from the compose
+# sheet rather than from search: search only matches message *text*, so
+# searching a name happily returns unrelated threads that merely mention it.
+
+MSG_COMPOSE_BUTTON = (0.869, 0.952)   # pencil icon on the conversation list
+MSG_TO_FIELD = (0.5, 0.196)           # "To:" field on the New Message sheet
+MSG_FIRST_CONTACT = (0.5, 0.267)      # first contact suggestion under "To:"
+MSG_BODY_FIELD = (0.57, 0.960)        # message input at the bottom
+MSG_SEND_BUTTON = (0.864, 0.940)      # arrow inside the body pill's right edge
+MSG_CLOSE_COMPOSE = (0.904, 0.116)    # X on the New Message sheet
+MSG_BACK_BUTTON = (0.086, 0.095)      # '<' in a conversation; 'Edit' on the list
+
+# Vertical band the contact suggestions occupy; used to tell "matches found"
+# from "no such contact" without OCR.
+MSG_SUGGESTION_BAND = (0.24, 0.85)
+
+
+# --------------------------------------------------------------------------
 # Per-app layouts
 # --------------------------------------------------------------------------
 
@@ -66,6 +88,8 @@ APP_PROFILES: tuple[AppProfile, ...] = (
     AppProfile("App Store", search_tab=(5, 5), aliases=("appstore",)),
     AppProfile("Instagram", search_tab=(4, 5), aliases=("insta", "ig")),
     AppProfile("Maps", search_tab=(1, 1), search_field=(0.5, 0.88)),
+    AppProfile("Messages", search_tab=(1, 1), search_field=(0.42, 0.94),
+               aliases=("imessage", "text", "sms")),
     AppProfile("Spotify", search_tab=(2, 3), aliases=("spot",)),
     AppProfile("Threads", search_tab=(2, 5)),
     AppProfile("X", search_tab=(2, 5), aliases=("twitter",)),
