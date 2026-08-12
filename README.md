@@ -195,6 +195,20 @@ and goes to a real person — so it is built to refuse rather than guess:
 Note it selects the *first* matching contact. If several people share a name,
 the confirmation screenshot is how you check which one it picked.
 
+### Drafts
+
+`thumb/drafts.py` holds flows that are built but **not registered as tools**, so
+the assistant cannot call them. Keeping them out of the tool list is deliberate:
+a shortcut that reports success while doing nothing is worse than no shortcut.
+
+Currently there: **Blinkit** (grocery). Launching, reaching search, locating ADD
+buttons by colour, detecting the pack-size chooser, and stopping at the cart all
+work. It is a draft because taps can land while results are still rendering —
+which opens a product page instead of adding — and because nothing verifies the
+cart count actually went up. The module documents exactly what to fix.
+
+Promote a draft by finishing those checks and adding a `@server.tool` wrapper.
+
 ### Adding a shortcut
 
 The shortcut system is split so that adding one rarely means writing flow logic:

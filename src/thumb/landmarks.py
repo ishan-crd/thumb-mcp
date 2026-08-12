@@ -94,6 +94,37 @@ def wa_result(index: int) -> tuple[float, float]:
 
 
 # --------------------------------------------------------------------------
+# Blinkit (grocery delivery) -- DRAFT, used only by thumb.drafts
+# --------------------------------------------------------------------------
+#
+# These back an unfinished flow that is deliberately not registered as a tool.
+# See thumb/drafts.py for what works, what does not, and what it needs.
+#
+# Two quirks drive the design of the Blinkit flow:
+#
+#  * The home screen's search bar shifts vertically as the page scrolls, so the
+#    flow taps it and then verifies it reached the dedicated search screen,
+#    where the field is reliably pinned to the top.
+#  * Tapping ADD on a product with multiple pack sizes opens a variant sheet
+#    instead of adding anything. The sheet dims the rest of the screen, which is
+#    a clean way to detect it: the top band measures ~102 with the sheet up
+#    versus ~240 without.
+
+BK_BACK_BUTTON = (0.086, 0.090)       # '<' on checkout / product pages
+BK_HOME_TAB = (0.157, 0.940)          # 'Home' in the bottom nav
+BK_HOME_SEARCH = (0.5, 0.190)         # search bar on the home screen
+BK_HOME_SEARCH_ALT = (0.5, 0.258)     # ...before the page scrolls
+BK_SEARCH_FIELD = (0.5, 0.098)        # field on the dedicated search screen
+BK_FIRST_ADD = (0.258, 0.623)         # ADD on the first result tile
+BK_VARIANT_FIRST_ADD = (0.245, 0.804) # ADD under the first pack size
+BK_VARIANT_CLOSE = (0.5, 0.555)       # X that dismisses the variant sheet
+BK_VIEW_CART = (0.5, 0.845)           # floating "View cart" pill
+
+BK_DIM_BAND = (0.05, 0.45)            # region the variant sheet dims
+BK_SHEET_DIM_MAX = 180.0              # brightness below this => sheet is open
+
+
+# --------------------------------------------------------------------------
 # Per-app layouts
 # --------------------------------------------------------------------------
 
@@ -117,6 +148,8 @@ class AppProfile:
 # gets typed into Spotlight, so it must match the real app title.
 APP_PROFILES: tuple[AppProfile, ...] = (
     AppProfile("App Store", search_tab=(5, 5), aliases=("appstore",)),
+    AppProfile("Blinkit", search_tab=(1, 1), search_field=BK_SEARCH_FIELD,
+               aliases=("blink it", "grofers")),
     AppProfile("Instagram", search_tab=(4, 5), aliases=("insta", "ig")),
     AppProfile("Maps", search_tab=(1, 1), search_field=(0.5, 0.88)),
     AppProfile("Messages", search_tab=(1, 1), search_field=(0.42, 0.94),
