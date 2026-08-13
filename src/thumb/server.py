@@ -797,6 +797,42 @@ def scroll_to(
     return f"Found and tapped {element.text!r} {where} -> screen ({gx:.0f}, {gy:.0f})."
 
 
+@server.tool(
+    description=(
+        "Open a URL on the phone through Safari. Works with web pages and with "
+        "deep links such as exp:// or maps://, which hand off to another app "
+        "after iOS asks for confirmation. Verifies the URL actually committed "
+        "rather than assuming Return worked."
+    )
+)
+@_focus_safe
+def open_url(url: str) -> list[TextContent | ImageContent]:
+    ok, report, image = flows.open_url(SESSION, url)
+    if not ok:
+        raise MirrorError(report)
+    # Deep links raise a confirmation alert; dismissing it is the caller's
+    # choice, so report it rather than tapping through silently.
+    if flows._alert_showing(SESSION):
+        report += (
+            " iOS is asking whether to open it in another app -- tap 'Open' "
+            "(around device x=0.85 of the width, y=0.51 of the height) to confirm."
+        )
+    return _shot(image, report)
+
+
+@server.tool(
+    description="Report whether the phone is currently portrait or landscape."
+)
+def get_orientation() -> str:
+    frame = SESSION.live_frame()
+    orientation = flows.device_orientation(SESSION)
+    return (
+        f"{orientation} -- mirrored screen is {frame.content_w:g}x"
+        f"{frame.content_h:g} points, coordinate space {frame.device_w}x"
+        f"{frame.device_h}."
+    )
+
+
 def main() -> None:
     server.run(transport="stdio")
 
