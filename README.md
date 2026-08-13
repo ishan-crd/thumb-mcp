@@ -284,6 +284,34 @@ cart count actually went up. The module documents exactly what to fix.
 
 Promote a draft by finishing those checks and adding a `@server.tool` wrapper.
 
+### Tests
+
+```bash
+uv run pytest
+```
+
+74 tests, no phone, no mirroring session, no permissions — they cover the pure
+logic where the real bugs lived, and run in about a second. CI runs them on
+macOS for Python 3.11 and 3.13 on every push.
+
+What they pin, and why each one exists:
+
+* **Coordinate mapping.** Every tap flows through `Frame.to_global()`; if it
+  drifts, taps land off-target and it looks like the app ignored them.
+* **Settle / assert / wait.** Three tools shipped reporting success while doing
+  nothing, so `assert_changed` failing loudly is now a test, not a hope.
+* **Keycodes.** A regression test that letters do not all map to keycode 0 —
+  they did, which is how "instagram" arrived on the phone as "aaaaaaaaa".
+* **Text ranking.** `tap_text("Wallet")` must prefer the exact label over a
+  longer string containing it.
+* **App aliases.** "insta" resolves to Instagram, unknown apps fall back
+  instead of failing.
+* **Errors.** Each names the exact System Settings pane and the *host* app, not
+  Python.
+
+Anything needing a real device stays out of the suite deliberately: it would
+make CI impossible and the failures would be about the phone, not the code.
+
 ### Adding a shortcut
 
 The shortcut system is split so that adding one rarely means writing flow logic:
