@@ -13,7 +13,7 @@ from mcp.server import MCPServer
 from mcp.types import ImageContent, TextContent
 from PIL import Image as PILImage
 
-from . import ax, flows, inputs, landmarks, mirror
+from . import ax, flows, inputs, landmarks, mirror, vision
 from .errors import (
     AccessibilityDenied,
     CoordinatesOutOfRange,
@@ -651,6 +651,71 @@ def confirm_send() -> list[TextContent | ImageContent]:
         )
     PENDING = None
     return _shot(image, "Send did not register, so the draft was rebuilt. " + report)
+
+
+@server.tool(
+    description=(
+        "List every piece of text on the iPhone screen with the exact device "
+        "coordinates to tap it. Use this instead of guessing positions from a "
+        "screenshot -- then tap(x, y), or just call tap_text(). Returns text "
+        "only by default, which is far cheaper than an image; set "
+        "include_image=true if you also need to see the screen."
+    )
+)
+@_focus_safe
+def describe_screen(include_image: bool = False) -> list[TextContent | ImageContent]:
+    frame = SESSION.live_frame()
+    elements = vision.recognize(frame.image, frame.device_w, frame.device_h)
+    lines = [
+        f"{len(elements)} text elements on screen. Coordinates are device "
+        f"points in a {frame.device_w} x {frame.device_h} space -- pass them "
+        "straight to tap(x, y).",
+    ]
+    lines += [
+        f"  ({element.x:6.0f}, {element.y:6.0f})  {element.text}"
+        for element in elements
+    ]
+    out: list[TextContent | ImageContent] = [
+        TextContent(type="text", text="\n".join(lines))
+    ]
+    if include_image:
+        out.append(_png_content(mirror.downscale(frame.image)))
+    return out
+
+
+@server.tool(
+    description=(
+        "Tap on-screen text by name, e.g. tap_text('Wallet'). Finds the text "
+        "with OCR and taps its centre, so it needs no coordinates and survives "
+        "layout changes. Prefers an exact label match over a longer string that "
+        "merely contains it. Use occurrence=2, 3, ... when the same text "
+        "appears more than once."
+    )
+)
+@_focus_safe
+def tap_text(text: str, occurrence: int = 1) -> str:
+    frame = SESSION.live_frame()
+    elements = vision.recognize(frame.image, frame.device_w, frame.device_h)
+    matches = vision.find(elements, text)
+    if not matches:
+        sample = ", ".join(repr(e.text) for e in elements[:12])
+        raise MirrorError(
+            f"No on-screen text matching {text!r}. Visible text includes: "
+            f"{sample}. Call describe_screen() to see everything."
+        )
+    index = max(1, occurrence) - 1
+    if index >= len(matches):
+        raise MirrorError(
+            f"Only {len(matches)} match(es) for {text!r}, so occurrence="
+            f"{occurrence} does not exist."
+        )
+    target = matches[index]
+    gx, gy = inputs.tap(frame, target.x, target.y)
+    others = f" ({len(matches)} matches; used #{index + 1})" if len(matches) > 1 else ""
+    return (
+        f"Tapped {target.text!r} at device ({target.x:.0f}, {target.y:.0f})"
+        f" -> screen ({gx:.0f}, {gy:.0f}){others}."
+    )
 
 
 def main() -> None:
