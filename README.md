@@ -139,13 +139,21 @@ the layout — it replaces a swipe-and-screenshot loop with a single call.
 |---|---|
 | `screenshot()` | The mirrored screen, plus the coordinate space to use |
 | `tap(x, y)` | Tap at a device point |
-| `swipe(x1, y1, x2, y2, duration_ms=300)` | Drag between two device points |
+| `swipe(x1, y1, x2, y2, duration_ms=300)` | Flick/scroll between two device points |
+| `long_press(x, y, hold_ms=700)` | Press and hold — context menus, previews, icon pickup |
+| `double_tap(x, y)` | Two taps in quick succession |
+| `drag(x1, y1, x2, y2)` | Pick up, move, drop — reordering and drag-and-drop |
 | `type_text(text)` | Type into the focused field (unicode + emoji) |
 | `press_key(key)` | `return`, `delete`, `escape`, `tab`, `space`, arrows |
 | `home()` / `app_switcher()` / `spotlight()` | Driven via the app's real menu items |
 | `wait_until_settled(timeout_s=5)` | Poll until the screen stops animating |
 | `device_info()` | Geometry, permissions, streaming state — for debugging |
 | `reconnect()` | Press Connect/Resume to resume a paused session |
+
+`swipe` and `drag` are deliberately different gestures: a swipe must stay
+*under* iOS's ~500ms long-press threshold or it becomes a drag (which is how a
+Home Screen swipe once rearranged apps into a folder), while a drag must exceed
+it so the item lifts before moving.
 
 Composite flows already settle internally, so `wait_until_settled()` is only
 needed after a raw `tap`/`swipe`.

@@ -718,6 +718,59 @@ def tap_text(text: str, occurrence: int = 1) -> str:
     )
 
 
+@server.tool(
+    description=(
+        "Press and hold at a device point. Use for context menus, previews, "
+        "and picking up an icon to move it. Distinct from tap: hold_ms must "
+        "clear iOS's ~500ms long-press threshold."
+    )
+)
+@_focus_safe
+def long_press(x: float, y: float, hold_ms: int = 700) -> str:
+    frame = SESSION.live_frame()
+    _check(frame, x, y)
+    gx, gy = inputs.long_press(frame, x, y, hold_ms)
+    return (
+        f"Held ({x:g}, {y:g}) for {hold_ms}ms -> screen ({gx:.0f}, {gy:.0f}). "
+        "Call wait_until_settled() then screenshot() to see the result."
+    )
+
+
+@server.tool(
+    description="Double-tap at a device point, e.g. to zoom or to like."
+)
+@_focus_safe
+def double_tap(x: float, y: float) -> str:
+    frame = SESSION.live_frame()
+    _check(frame, x, y)
+    gx, gy = inputs.double_tap(frame, x, y)
+    return f"Double-tapped ({x:g}, {y:g}) -> screen ({gx:.0f}, {gy:.0f})."
+
+
+@server.tool(
+    description=(
+        "Drag an item from one device point to another: press and hold until "
+        "it lifts, move, dwell at the destination, release. Use for reordering "
+        "and drag-and-drop. For scrolling or flicking use swipe instead -- a "
+        "swipe deliberately stays under the long-press threshold, a drag "
+        "deliberately exceeds it."
+    )
+)
+@_focus_safe
+def drag(
+    x1: float, y1: float, x2: float, y2: float, hold_ms: int = 700, move_ms: int = 900
+) -> str:
+    frame = SESSION.live_frame()
+    _check(frame, x1, y1)
+    _check(frame, x2, y2)
+    start, end = inputs.drag(frame, x1, y1, x2, y2, hold_ms, move_ms)
+    return (
+        f"Dragged ({x1:g}, {y1:g}) -> ({x2:g}, {y2:g}) "
+        f"[screen {start[0]:.0f},{start[1]:.0f} -> {end[0]:.0f},{end[1]:.0f}]. "
+        "Call wait_until_settled() then screenshot() to see the result."
+    )
+
+
 def main() -> None:
     server.run(transport="stdio")
 
