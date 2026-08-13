@@ -833,6 +833,36 @@ def get_orientation() -> str:
     )
 
 
+@server.tool(
+    description=(
+        "Wait until some text appears on screen, or disappears with gone=true. "
+        "Use this instead of wait_until_settled when you know what you are "
+        "waiting for -- it is more precise and usually faster, and it works on "
+        "screens that never go still (spinners, autoplaying video)."
+    )
+)
+@_focus_safe
+def wait_for_text(text: str, timeout_s: float = 15.0, gone: bool = False) -> str:
+    found, element, _frame = flows.wait_for_text(SESSION, text, timeout_s, gone)
+    if gone:
+        if found:
+            return f"{text!r} is no longer on screen."
+        raise MirrorError(
+            f"{text!r} was still on screen after {timeout_s:g}s"
+            + (f" (at {element.x:.0f}, {element.y:.0f})" if element else "")
+            + "."
+        )
+    if found and element is not None:
+        return (
+            f"{element.text!r} appeared at device ({element.x:.0f}, "
+            f"{element.y:.0f}) -- tap there, or use tap_text()."
+        )
+    raise MirrorError(
+        f"{text!r} did not appear within {timeout_s:g}s. Call describe_screen() "
+        "to see what is actually on screen."
+    )
+
+
 def main() -> None:
     server.run(transport="stdio")
 

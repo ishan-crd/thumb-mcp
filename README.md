@@ -159,6 +159,7 @@ the layout — it replaces a swipe-and-screenshot loop with a single call.
 | `press_key(key)` | `return`, `delete`, `escape`, `tab`, `space`, arrows |
 | `home()` / `app_switcher()` / `spotlight()` | Driven via the app's real menu items |
 | `wait_until_settled(timeout_s=5)` | Poll until the screen stops animating |
+| `wait_for_text("Done", gone=False)` | **Wait for text to appear or disappear** — precise, and works on screens that never go still |
 | `device_info()` | Geometry, permissions, streaming state — for debugging |
 | `reconnect()` | Press Connect/Resume to resume a paused session |
 
@@ -185,6 +186,21 @@ than failing mysteriously.
 It defaults to the `exp://` deep link, which hands straight off to Expo Go and
 skips the dev-server page and its button entirely. `use_dev_build=True` switches
 to `http://` so that page's "Development Build" option can be chosen.
+
+### Waiting
+
+`wait_until_settled()` waits for the screen to stop moving, which is a *proxy*
+for "ready" and fails on anything animated — an autoplaying feed never settles,
+and a spinner keeps a screen busy indefinitely.
+
+When you know what you are waiting for, say so:
+
+```
+wait_for_text("Done")                  # until it appears
+wait_for_text("Loading", gone=True)    # until it goes away
+```
+
+Faster too: found in 0.4s on a screen that was already showing it.
 
 ### Reading the screen
 
