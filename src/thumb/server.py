@@ -863,6 +863,26 @@ def wait_for_text(text: str, timeout_s: float = 15.0, gone: bool = False) -> str
     )
 
 
+@server.tool(
+    description=(
+        "Back out to the current app's root screen by tapping its back chevron "
+        "until nothing more changes. Use it after open_app when a flow needs a "
+        "known starting point -- iOS resumes an app wherever it was last left, "
+        "which is the usual reason a sequence of taps goes somewhere unexpected. "
+        "(Force-quitting an app is not possible through mirroring.)"
+    )
+)
+@_focus_safe
+def go_to_root(max_steps: int = 5) -> list[TextContent | ImageContent]:
+    steps, frame = flows.go_to_root(SESSION, max_steps)
+    note = (
+        f"Backed out {steps} screen(s) to the app root."
+        if steps
+        else "Already at the app root -- nothing to back out of."
+    )
+    return _shot(frame.image, note, frame)
+
+
 def main() -> None:
     server.run(transport="stdio")
 

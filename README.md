@@ -139,6 +139,7 @@ round trip.
 | `scroll(direction, amount=0.6)` | Scroll `down`/`up`/`left`/`right` by a fraction of the screen |
 | `scroll_to("General", tap=False)` | **Scroll until text appears**, then optionally tap it |
 | `go_back()` | Tap the app's top-left back chevron; fails loudly at a root screen |
+| `go_to_root(max_steps=5)` | **Back out to the app's root screen** — a known starting point after `open_app` |
 
 `open_app` uses Spotlight rather than hunting for an icon: it's one deterministic
 path no matter which page the app lives on, needs no pixel search, and Return
@@ -451,6 +452,15 @@ host in the address-bar row specifically.
 A related trap: Vision often returns the alert's two buttons as one block,
 `"Cancel Open"`. Requiring them as separate labels missed an alert that was
 plainly on screen.
+
+**Apps resume where you left them, and cannot be force-quit.** iOS reopens an
+app exactly as it was — Messages on a half-filled compose sheet, Blinkit deep in
+checkout, Settings on a sub-page — which is the most common reason a sequence of
+taps ends up somewhere unexpected. Force-quitting would be the thorough fix and
+is not available: the App Switcher's swipe-up card dismissal does not register
+through mirroring (measured delta 0.07), the same way vertical drags do not
+scroll. `go_to_root()` backs out with the back chevron instead, which is what is
+actually reachable.
 
 **Some iOS gestures cannot be driven at all.** Control Centre and Notification
 Centre need a swipe that begins *off* the screen edge, which is unreachable

@@ -936,6 +936,30 @@ def open_expo_app(session, url: str | None = None, use_dev_build: bool = False):
 # Find things that are not on screen yet
 # --------------------------------------------------------------------------
 
+def go_to_root(session, max_steps: int = 5):
+    """Back out to an app's root screen. Returns (steps, frame).
+
+    iOS resumes an app exactly where it was left, which is the single most
+    common cause of a flow going wrong: Messages reopening on a half-filled
+    compose sheet, Blinkit deep in checkout, Settings on a sub-page. Every such
+    flow was re-implementing "tap back until it stops moving".
+
+    Force-quitting would be the thorough answer, and it is not available: the
+    App Switcher's swipe-up card dismissal does not register through mirroring,
+    the same way vertical drags do not scroll. Backing out is what is actually
+    reachable.
+    """
+    steps = 0
+    for _ in range(max(1, max_steps)):
+        before = session.frame().image
+        tap_at(session, *landmarks.BACK_CHEVRON)
+        settle(session, timeout_s=3.0, stable_for_s=0.25)
+        if not _changed_since(session, before):
+            break
+        steps += 1
+    return steps, session.live_frame()
+
+
 def wait_for_text(session, text: str, timeout_s: float = 15.0, gone: bool = False):
     """Wait until some text appears (or disappears). Returns (ok, element, frame).
 
