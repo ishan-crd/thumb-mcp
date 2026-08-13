@@ -785,27 +785,98 @@ def wait_for_brightness(session, top, bottom, minimum: float, timeout_s: float =
         time.sleep(0.2)
 
 
-def _alert_showing(session) -> bool:
+def screen_text(session) -> list:
+    """Every recognised text element on the current screen."""
+    frame = session.live_frame()
+    return vision.recognize(frame.image, frame.device_w, frame.device_h)
+
+
+def _alert_showing(session, elements=None) -> bool:
     """True while iOS's "Open this page in X?" alert is on screen.
 
-    Detects the alert's blue "Open" text rather than the dimming it applies.
-    Dimming is not usable as a signal: the page behind is often dark already, so
-    a brightness test fires on any dark screen -- which made the flow "see" the
-    alert before it existed, tap empty space, and then sit there while the real
-    alert appeared. Measured 0.029 blue with the alert up, 0.0000 without.
+    Reads the buttons rather than looking for a colour. Two earlier attempts
+    keyed on appearance and both produced false positives: screen dimming fired
+    on any dark page, and blue-pixel detection fired on any page with blue text
+    in that region -- which reported a Google results page as an open alert.
+    An alert is the only thing with both "Cancel" and "Open" on screen.
     """
-    left, top, right, bottom = landmarks.ALERT_BUTTON_REGION
-    image = session.frame().image.convert("RGB")
-    width, height = image.size
-    px = image.load()
-    total = hits = 0
-    for y in range(int(height * top), int(height * bottom)):
-        for x in range(int(width * left), int(width * right)):
-            r, g, b = px[x, y]
-            total += 1
-            if b > 170 and b - r > 60 and b - g > 40:
-                hits += 1
-    return total > 0 and (hits / total) >= landmarks.ALERT_BLUE_MIN_RATIO
+    if elements is None:
+        elements = screen_text(session)
+    # Match across the joined text, not per element: Vision often returns the
+    # alert's two buttons as one block ("Cancel Open"), so requiring them as
+    # separate labels missed an alert that was plainly on screen.
+    blob = " ".join(element.text.strip().lower() for element in elements)
+    return "cancel" in blob and "open" in blob
+
+
+def open_url(session, url: str, timeout_s: float = 15.0):
+    """Open a URL on the phone through Safari. Returns (ok, report, frame).
+
+    Handles any scheme: an https page renders, while a deep link such as
+    ``exp://`` or ``maps://`` makes iOS raise its "Open this page in X?" alert.
+    Both count as the URL having committed.
+
+    Committing is verified rather than assumed. "The screen changed" is not
+    enough -- opening Safari's suggestion dropdown changes the screen too, and
+    an earlier version reported success while still sitting in that dropdown.
+    """
+    report, image = open_app(session, "Safari")
+    if "Could not" in report or "never opened" in report:
+        return False, report, image
+    settle(session, timeout_s=4.0, stable_for_s=0.3)
+
+    tap_at(session, *landmarks.SAFARI_URL_BAR)
+    settle(session, timeout_s=4.0, stable_for_s=0.3)
+
+    pid = session.live_frame().window.pid
+    clear_field(pid, 60)
+    inputs.type_text(pid, url)
+    # Let Safari's inline autocomplete settle before committing, or Return can
+    # be swallowed by the suggestion list.
+    settle(session, timeout_s=3.0, stable_for_s=0.3)
+
+    # Confirm by reading the screen. A deep link raises the confirm alert; a web
+    # address ends up in Safari's address bar. Anything else means Return was
+    # swallowed by the suggestion list, which is what used to pass unnoticed.
+    host = url.split("://", 1)[-1].split("/", 1)[0].lower()
+    host_key = host.replace("www.", "")
+    scheme = url.split("://", 1)[0].lower() if "://" in url else "https"
+    # A deep link never renders a page -- the only success signal is the alert.
+    # A web address lands in Safari's address bar, which sits at the bottom;
+    # matching the host *anywhere* is not enough, because the suggestion
+    # dropdown displays the text you just typed and would match immediately.
+    web = scheme in ("http", "https")
+    for _attempt in range(2):
+        inputs.press_key(pid, "return")
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            elements = screen_text(session)
+            if _alert_showing(session, elements):
+                return (True, f"Opened {url}; iOS is asking which app to use.",
+                        session.frame().image)
+            if web and host_key:
+                frame = session.live_frame()
+                bar = [
+                    element for element in elements
+                    if element.y > frame.device_h * landmarks.SAFARI_BAR_BAND
+                ]
+                if any(host_key in element.text.lower() for element in bar):
+                    return True, f"Opened {url}.", session.frame().image
+            time.sleep(0.3)
+    return (
+        False,
+        f"Typed {url} but it never loaded -- {host!r} did not appear on screen "
+        "and no app-handoff alert was raised. Safari probably stayed on its "
+        "suggestion list; check the address and that the host is reachable "
+        "from the phone.",
+        session.frame().image,
+    )
+
+
+def device_orientation(session) -> str:
+    """'portrait' or 'landscape', from the shape of the mirrored screen."""
+    frame = session.live_frame()
+    return "landscape" if frame.content_w > frame.content_h else "portrait"
 
 
 def open_expo_app(session, url: str | None = None, use_dev_build: bool = False):
@@ -829,48 +900,9 @@ def open_expo_app(session, url: str | None = None, use_dev_build: bool = False):
             session.frame().image,
         )
 
-    report, image = open_app(session, "Safari")
-    if "Could not" in report or "never opened" in report:
+    ok, report, image = open_url(session, target)
+    if not ok:
         return report, image
-    settle(session, timeout_s=4.0, stable_for_s=0.3)
-
-    tap_at(session, *landmarks.SAFARI_URL_BAR)
-    settle(session, timeout_s=4.0, stable_for_s=0.3)
-
-    pid = session.live_frame().window.pid
-    clear_field(pid, 60)
-    inputs.type_text(pid, target)
-    # Let Safari's inline autocomplete settle before committing, or Return can
-    # be swallowed by the suggestion list.
-    settle(session, timeout_s=3.0, stable_for_s=0.3)
-
-    # "The screen changed" is not good enough: opening Safari's suggestion list
-    # changes the screen too, and an earlier version happily reported success
-    # while still sitting in that dropdown. Wait for one of the two things that
-    # actually mean the URL committed:
-    #
-    #   exp://   -> iOS's "Open this page in Expo Go?" dialog (it dims the page)
-    #   http://  -> the dev-server page, which is white
-    top, bottom = landmarks.EXPO_DIALOG_BAND
-    committed = False
-    for _ in range(2):
-        inputs.press_key(pid, "return")
-        deadline = time.monotonic() + 15.0
-        while time.monotonic() < deadline:
-            if _alert_showing(session) or _band_brightness(
-                session.frame().image, top, bottom
-            ) >= 180.0:
-                committed = True
-                break
-            time.sleep(0.2)
-        if committed:
-            break
-    if not committed:
-        return (
-            f"Typed {target} but nothing committed -- Safari stayed on its "
-            "suggestion list. Check the dev server is reachable from the phone.",
-            session.frame().image,
-        )
 
     # With http:// we land on the dev-server page and still have to choose how
     # to open the project. With exp:// the handoff dialog is already up.

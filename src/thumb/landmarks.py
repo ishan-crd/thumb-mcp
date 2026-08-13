@@ -195,12 +195,13 @@ def canonical_name(app: str) -> str:
 # dialog up vs 246 without).
 
 SAFARI_URL_BAR = (0.5, 0.932)
+# Anything below this fraction of the screen is the address-bar row. Used to
+# confirm a page loaded: the suggestion dropdown echoes the typed text higher
+# up, so matching the host anywhere would pass while still in the dropdown.
+SAFARI_BAR_BAND = 0.88
 EXPO_DEV_BUILD_BUTTON = (0.5, 0.773)
 EXPO_GO_BUTTON = (0.5, 0.830)
 IOS_CONFIRM_OPEN = (0.845, 0.506)   # "Open" in the app-handoff dialog
 EXPO_DIALOG_BAND = (0.10, 0.40)
-# Region around the alert's "Open" button, and how much iOS-blue text must be
-# in it to count as a dialog. Detecting the *button* rather than the dimming is
-# what makes this work over a dark page -- see _alert_showing().
-ALERT_BUTTON_REGION = (0.74, 0.47, 0.96, 0.55)
-ALERT_BLUE_MIN_RATIO = 0.005
+# The alert is detected by reading its buttons (see flows._alert_showing), not
+# by its appearance -- colour and dimming both produced false positives.

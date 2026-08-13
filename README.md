@@ -124,6 +124,8 @@ round trip.
 
 | Tool | What it does |
 |---|---|
+| `open_url(url)` | Open any URL or deep link (`exp://`, `maps://`) on the phone, verified |
+| `get_orientation()` | Portrait or landscape |
 | `open_expo_app(url=None, use_dev_build=False)` | **Open your Expo dev-server project on the phone.** Safari → dev URL → Expo Go → confirm handoff → wait for the bundle. Auto-detects the Mac's LAN address |
 | `describe_screen(include_image=False)` | **Every text element on screen with tap coordinates.** Text-only by default — far cheaper than an image |
 | `tap_text("Wallet")` | **Tap on-screen text by name.** No coordinates, survives layout changes |
@@ -421,6 +423,18 @@ version of the WhatsApp flow opened the app via Spotlight, pressed Escape twice,
 landed on the Home Screen, and then tried to navigate back in. Flows now tap the
 target control and, if it no-ops, back out once with the app's own back chevron
 and retry — self-correcting, and it never leaves the app.
+
+**Confirm by reading the screen, not by how it looks.** Three separate attempts
+to detect iOS's app-handoff alert by appearance all produced false positives:
+screen dimming fired on any dark page, blue-pixel detection fired on a Google
+results page, and matching the URL text anywhere fired while still inside
+Safari's suggestion dropdown — which *displays* what you just typed. It now
+reads the alert's buttons with OCR, and confirms a loaded page by finding the
+host in the address-bar row specifically.
+
+A related trap: Vision often returns the alert's two buttons as one block,
+`"Cancel Open"`. Requiring them as separate labels missed an alert that was
+plainly on screen.
 
 **Some iOS gestures cannot be driven at all.** Control Centre and Notification
 Centre need a swipe that begins *off* the screen edge, which is unreachable
