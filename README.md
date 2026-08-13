@@ -29,6 +29,14 @@ refuses to connect, that is an Apple-side restriction, not this server.
 
 ## Install
 
+Once published, no clone is needed:
+
+```bash
+uvx thumb-mcp        # runs the server; uv fetches it on first use
+```
+
+Or from source, to hack on it:
+
 ```bash
 git clone https://github.com/ishan-crd/thumb-mcp && cd thumb-mcp
 uv sync
@@ -79,6 +87,12 @@ pane name rather than misbehaving quietly.
 **Claude Code**
 
 ```bash
+claude mcp add thumb -- uvx thumb-mcp
+```
+
+From a source checkout instead:
+
+```bash
 claude mcp add thumb -- uv --directory /absolute/path/to/thumb-mcp run thumb-mcp
 ```
 
@@ -88,18 +102,14 @@ claude mcp add thumb -- uv --directory /absolute/path/to/thumb-mcp run thumb-mcp
 {
   "mcpServers": {
     "thumb": {
-      "command": "uv",
-      "args": [
-        "--directory", "/absolute/path/to/thumb-mcp",
-        "run", "thumb-mcp"
-      ]
+      "command": "uvx",
+      "args": ["thumb-mcp"]
     }
   }
 }
 ```
 
-Use an absolute path, and `which uv` if `uv` isn't found (GUI apps don't inherit
-your shell `PATH`).
+Use the absolute path form (`"command": "uv"`, `"args": ["--directory", "/path/to/thumb-mcp", "run", "thumb-mcp"]`) if you are running from a checkout. Either way, `which uvx` if the binary isn't found — GUI apps don't inherit your shell `PATH`.
 
 ---
 
