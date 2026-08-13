@@ -125,6 +125,7 @@ round trip.
 | `tap_and_type(x, y, text)` | Focus a field and type, waiting for focus first |
 | `survey_home(max_pages=4)` | Pages across the Home Screen, returning **one screenshot per page in a single call**. Stops early at the last page |
 | `scroll(direction, amount=0.6)` | Scroll `down`/`up`/`left`/`right` by a fraction of the screen |
+| `scroll_to("General", tap=False)` | **Scroll until text appears**, then optionally tap it |
 | `go_back()` | Left-edge back swipe |
 | `control_center()` / `notifications()` | Pull down from the top-right / top-left |
 
@@ -383,6 +384,15 @@ version of the WhatsApp flow opened the app via Spotlight, pressed Escape twice,
 landed on the Home Screen, and then tried to navigate back in. Flows now tap the
 target control and, if it no-ops, back out once with the app's own back chevron
 and retry — self-correcting, and it never leaves the app.
+
+**Vertical scrolling needs wheel events and a warped cursor.** A click-drag
+does not scroll iOS lists through mirroring at all — horizontal drags page the
+Home Screen fine, which is what made this so easy to miss, but a vertical drag
+over a list does precisely nothing. Mirroring expects trackpad-style scroll
+events. The second half of the trap: scroll events go to whatever is under the
+*system* cursor, and posting a synthetic mouse-moved event does not move it —
+the cursor has to be warped with `CGWarpMouseCursorPosition`. Without both
+halves, `scroll()` silently no-ops.
 
 **Menu commands need verifying.** `View > Spotlight` pressed straight after
 `Home` frequently no-ops while the Home Screen is still animating. Unverified,

@@ -771,6 +771,32 @@ def drag(
     )
 
 
+@server.tool(
+    description=(
+        "Scroll until some text comes into view, then optionally tap it. OCR "
+        "only sees what is rendered, so anything below the fold is invisible to "
+        "describe_screen and tap_text -- use this to reach it. Stops early when "
+        "the list stops moving."
+    )
+)
+@_focus_safe
+def scroll_to(
+    text: str, direction: str = "down", tap: bool = False, max_scrolls: int = 10
+) -> str:
+    element, scrolls, frame = flows.scroll_to_text(SESSION, text, direction, max_scrolls)
+    if element is None:
+        raise MirrorError(
+            f"Scrolled {direction} {scrolls} time(s) without finding {text!r}. "
+            "It may be spelled differently, be an icon rather than text, or lie "
+            "in the other direction."
+        )
+    where = f"at device ({element.x:.0f}, {element.y:.0f}) after {scrolls} scroll(s)"
+    if not tap:
+        return f"Found {element.text!r} {where}. Pass tap=true to tap it."
+    gx, gy = inputs.tap(frame, element.x, element.y)
+    return f"Found and tapped {element.text!r} {where} -> screen ({gx:.0f}, {gy:.0f})."
+
+
 def main() -> None:
     server.run(transport="stdio")
 
