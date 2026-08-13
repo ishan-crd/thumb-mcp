@@ -79,6 +79,24 @@ def _band_brightness(image, top: float, bottom: float) -> float:
     return ImageStat.Stat(image.crop(box).convert("L")).mean[0]
 
 
+def assert_changed(session, before, what: str, threshold: float = CHANGED) -> float:
+    """Fail loudly when an action that must change the screen did not.
+
+    Silent no-ops are the worst failure mode here: the tool reports success, the
+    caller keeps driving a screen it never left, and the damage surfaces several
+    steps later. Three tools shipped in this state before this helper existed --
+    vertical scroll, Spotlight's Return, and the handoff-dialog check.
+    """
+    delta = mirror.frame_difference(before, session.frame().image)
+    if delta <= threshold:
+        raise MirrorError(
+            f"{what} did not change the screen (frame delta {delta:.2f}). "
+            "The action did not reach the phone, or the control was not where "
+            "it was expected."
+        )
+    return delta
+
+
 def _changed_since(session, before: PILImage.Image, threshold: float = CHANGED) -> bool:
     return mirror.frame_difference(before, session.frame().image) > threshold
 
@@ -210,16 +228,18 @@ def scroll(session, direction: str = "down", amount: float = 0.6):
 
 
 def back(session):
-    """Swipe in from the left edge to go back."""
-    swipe_between(session, landmarks.EDGE_INSET, 0.5, 0.62, 0.5, duration_ms=300)
+    """Go back by tapping the app's own back chevron, top-left.
 
-
-def control_center(session):
-    swipe_between(session, 0.92, landmarks.EDGE_INSET, 0.92, 0.45, duration_ms=320)
-
-
-def notifications(session):
-    swipe_between(session, 0.25, landmarks.EDGE_INSET, 0.25, 0.55, duration_ms=320)
+    The iOS edge-swipe-to-go-back gesture does NOT register through mirroring:
+    a drag starting at the screen edge does nothing, and a real edge swipe would
+    have to begin off-screen, which is unreachable here. Nearly every iOS screen
+    with a back action puts a chevron in the same top-left spot, so tap that
+    instead -- and verify, since on a root screen there is nothing to go back to.
+    """
+    before = session.frame().image
+    tap_at(session, *landmarks.BACK_CHEVRON)
+    settle(session, timeout_s=4.0, stable_for_s=0.3)
+    return assert_changed(session, before, "go_back")
 
 
 def home_page(session, direction: str = "next"):

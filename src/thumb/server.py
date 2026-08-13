@@ -548,35 +548,35 @@ def tap_and_type(
 )
 @_focus_safe
 def scroll(direction: str = "down", amount: float = 0.6) -> list[TextContent | ImageContent]:
+    before = SESSION.frame().image
     flows.scroll(SESSION, direction, amount)
     status, image = flows.settle(SESSION, timeout_s=4.0)
+    # Say whether it actually moved. Hitting the end of a list is legitimate, so
+    # this is not an error -- but reporting "scrolled" when nothing moved is how
+    # a caller ends up scrolling forever looking for something.
+    moved = mirror.frame_difference(before, image)
+    if moved <= flows.CHANGED:
+        return _shot(
+            image,
+            f"Scroll {direction} did not move the screen (delta {moved:.2f}) -- "
+            "already at the end of the content, or this view does not scroll.",
+        )
     return _shot(image, f"Scrolled {direction} by {amount:g} ({status}).")
 
 
 @server.tool(
-    description="Go back (swipe in from the left edge). Returns the settled screen."
+    description=(
+        "Go back one screen by tapping the app's top-left back chevron. Fails "
+        "loudly if nothing changes, which usually means you are already at a "
+        "root screen. (The iOS edge-swipe gesture does not work through "
+        "mirroring.)"
+    )
 )
 @_focus_safe
 def go_back() -> list[TextContent | ImageContent]:
     flows.back(SESSION)
     status, image = flows.settle(SESSION, timeout_s=4.0)
-    return _shot(image, f"Swiped back ({status}).")
-
-
-@server.tool(description="Open Control Centre. Returns the settled screen.")
-@_focus_safe
-def control_center() -> list[TextContent | ImageContent]:
-    flows.control_center(SESSION)
-    status, image = flows.settle(SESSION, timeout_s=4.0)
-    return _shot(image, f"Opened Control Centre ({status}).")
-
-
-@server.tool(description="Open Notification Centre. Returns the settled screen.")
-@_focus_safe
-def notifications() -> list[TextContent | ImageContent]:
-    flows.notifications(SESSION)
-    status, image = flows.settle(SESSION, timeout_s=4.0)
-    return _shot(image, f"Opened Notification Centre ({status}).")
+    return _shot(image, f"Went back ({status}).")
 
 
 @server.tool(

@@ -24,9 +24,9 @@ TOP_SEARCH_FIELD = (0.5, 0.10)  # search bar pinned below the status bar
 SPOTLIGHT_TOP_HIT = (0.161, 0.172)  # first app icon under "Top Hit"
 HOME_EMPTY_BAND = 0.82          # y of dead space between last icon row and dock
 
-# Edge gestures start marginally off-screen so iOS reads them as edge swipes
-# rather than as in-content drags.
-EDGE_INSET = 0.005
+# Top-left back chevron. Near-universal across iOS apps, and the only reliable
+# way back: the edge-swipe gesture does not register through mirroring.
+BACK_CHEVRON = (0.086, 0.090)
 
 
 def nav_slot(index: int, count: int = 5) -> tuple[float, float]:

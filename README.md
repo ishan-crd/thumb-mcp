@@ -126,8 +126,7 @@ round trip.
 | `survey_home(max_pages=4)` | Pages across the Home Screen, returning **one screenshot per page in a single call**. Stops early at the last page |
 | `scroll(direction, amount=0.6)` | Scroll `down`/`up`/`left`/`right` by a fraction of the screen |
 | `scroll_to("General", tap=False)` | **Scroll until text appears**, then optionally tap it |
-| `go_back()` | Left-edge back swipe |
-| `control_center()` / `notifications()` | Pull down from the top-right / top-left |
+| `go_back()` | Tap the app's top-left back chevron; fails loudly at a root screen |
 
 `open_app` uses Spotlight rather than hunting for an icon: it's one deterministic
 path no matter which page the app lives on, needs no pixel search, and Return
@@ -384,6 +383,20 @@ version of the WhatsApp flow opened the app via Spotlight, pressed Escape twice,
 landed on the Home Screen, and then tried to navigate back in. Flows now tap the
 target control and, if it no-ops, back out once with the app's own back chevron
 and retry — self-correcting, and it never leaves the app.
+
+**Some iOS gestures cannot be driven at all.** Control Centre and Notification
+Centre need a swipe that begins *off* the screen edge, which is unreachable
+through mirroring, and the app's View menu offers only Home Screen, App Switcher
+and Spotlight. Tools for them were removed rather than left in place doing
+nothing. Edge-swipe-to-go-back is unreachable for the same reason, so `go_back()`
+taps the app's own back chevron instead.
+
+**Silent no-ops are the failure mode to design against.** Three tools shipped
+looking fine while doing nothing: vertical `scroll`, Spotlight's Return, and the
+handoff-dialog check. `flows.assert_changed()` now fails loudly where a no-op is
+always a bug, and `scroll()` reports when it did not move rather than claiming
+success. When auditing, gate on a known-good action first — a wedged session
+otherwise makes every tool look broken.
 
 **Vertical scrolling needs wheel events and a warped cursor.** A click-drag
 does not scroll iOS lists through mirroring at all — horizontal drags page the
