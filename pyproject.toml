@@ -33,3 +33,13 @@ build-backend = "uv_build"
 # backend needs telling -- it would otherwise look for a "thumb_mcp" module.
 [tool.uv.build-backend]
 module-name = "thumb"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+# tests/ on the path so conftest helpers import cleanly
+pythonpath = ["tests"]
+testpaths = ["tests"]
