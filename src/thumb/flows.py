@@ -936,6 +936,29 @@ def open_expo_app(session, url: str | None = None, use_dev_build: bool = False):
 # Find things that are not on screen yet
 # --------------------------------------------------------------------------
 
+def wait_for_text(session, text: str, timeout_s: float = 15.0, gone: bool = False):
+    """Wait until some text appears (or disappears). Returns (ok, element, frame).
+
+    More precise than waiting for the screen to go still, and usually faster:
+    "wait until 'Loading' goes away" is the actual condition, whereas stillness
+    is a proxy that fails on anything animated -- an autoplaying feed never
+    settles, and a spinner keeps a screen "busy" forever.
+    """
+    deadline = time.monotonic() + max(0.5, timeout_s)
+    frame = session.live_frame()
+    while True:
+        frame = session.live_frame()
+        elements = vision.recognize(frame.image, frame.device_w, frame.device_h)
+        matches = vision.find(elements, text)
+        if gone and not matches:
+            return True, None, frame
+        if not gone and matches:
+            return True, matches[0], frame
+        if time.monotonic() >= deadline:
+            return False, (matches[0] if matches else None), frame
+        time.sleep(0.25)
+
+
 def scroll_to_text(session, text: str, direction: str = "down", max_scrolls: int = 10):
     """Scroll until some text is visible. Returns (element, scrolls, frame).
 
