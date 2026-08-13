@@ -114,6 +114,7 @@ round trip.
 
 | Tool | What it does |
 |---|---|
+| `confirm_send()` | **Send the draft already on screen.** Taps Send directly — no rebuild, no second screenshot first — then verifies. Rebuilds and sends automatically if the tap misses |
 | `send_whatsapp(recipient, text, contact_index=1, send=False)` | **Send a WhatsApp message.** Opens WhatsApp → New chat → search → open chat → type. Drafts by default |
 | `send_message(recipient, text, send=False)` | **Send a text.** Opens Messages → New Message → resolves the recipient to a real contact → types the body. Stops there by default and returns a screenshot to confirm; only sends with `send=true` |
 | `search_in_app(app, query)` | **Open an app and search inside it in one call** — Home → Spotlight → launch → Search tab → search field → type. No intermediate screenshots |
@@ -145,6 +146,27 @@ the layout — it replaces a swipe-and-screenshot loop with a single call.
 
 Composite flows already settle internally, so `wait_until_settled()` is only
 needed after a raw `tap`/`swipe`.
+
+### Draft, confirm, send
+
+Sending is two calls, not one:
+
+```
+send_message("Himanshu", "hey")   # or send_whatsapp(...)
+   -> drafts, returns a screenshot, sends nothing
+   -> show it to the user and ask
+confirm_send()                    # only after they agree
+```
+
+`confirm_send()` is the fast path: it presses Send on the draft that is already
+on screen rather than rebuilding it, which is **~2s instead of ~20s**. It does
+not screenshot before pressing — the draft was already shown and approved — and
+screenshots after, as proof. If the tap does not register it rebuilds the draft
+and sends it in the same call, without asking twice.
+
+Verifying the send needs no OCR: both apps swap the send control for a grey
+mic/audio glyph once the message goes, so a saturated blue/green pixel at the
+send position means the draft is still pending.
 
 ### One command per app, not one generic "messenger"
 
@@ -296,6 +318,18 @@ accents) fall back to the unicode path.
 event otherwise inherits the live modifier state, so a Command flag left over
 from an earlier shortcut rides along on ordinary letters. Typing "instagra**m**"
 then delivers Cmd-M and minimises the mirroring window mid-run.
+
+**Launch apps by tapping the Top Hit, not by pressing Return.** Return in
+Spotlight frequently does *not* launch the highlighted app — Spotlight simply
+sits there with the query typed — and the caller then drives a screen it never
+left. Tapping the Top Hit icon is unambiguous.
+
+**Never use Escape to unwind inside an app.** Within an iOS app Escape acts as
+"go back", and a couple of presses drop clean out to the Home Screen. An earlier
+version of the WhatsApp flow opened the app via Spotlight, pressed Escape twice,
+landed on the Home Screen, and then tried to navigate back in. Flows now tap the
+target control and, if it no-ops, back out once with the app's own back chevron
+and retry — self-correcting, and it never leaves the app.
 
 **Menu commands need verifying.** `View > Spotlight` pressed straight after
 `Home` frequently no-ops while the Home Screen is still animating. Unverified,

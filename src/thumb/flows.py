@@ -264,18 +264,27 @@ def open_app(session, name: str, timeout_s: float = 8.0):
                 results,
             )
 
-    inputs.press_key(pid, "return")
+    # Tap the Top Hit rather than pressing Return. Return frequently does NOT
+    # launch the highlighted app -- Spotlight just sits there with the query
+    # typed -- and the caller then drives a screen it never actually left.
+    # Tapping the icon is unambiguous.
+    tap_at(session, *landmarks.SPOTLIGHT_TOP_HIT)
     # Cap the post-launch wait: media-heavy apps (an autoplaying feed) never go
     # fully still, and the app is usable long before the timeout expires.
     status, final = settle(session, timeout_s=min(timeout_s, 4.5), stable_for_s=0.35)
 
     launched = mirror.frame_difference(results, final) > 8
+    if not launched:
+        # Fall back to Return, in case the Top Hit row was laid out differently.
+        inputs.press_key(pid, "return")
+        status, final = settle(session, timeout_s=min(timeout_s, 4.5), stable_for_s=0.35)
+        launched = mirror.frame_difference(results, final) > 8
     report = (
         f"Opened {app!r} via Spotlight ({status})."
         if launched
-        else f"Typed {app!r} into Spotlight and pressed Return, but the screen "
-        f"barely changed ({status}) -- the app may not exist, or the top hit was "
-        "not an app. Check the screenshot."
+        else f"Searched {app!r} in Spotlight but the app never opened "
+        f"({status}) -- it may not be installed, or the top hit was not an app. "
+        "Check the screenshot."
     )
     return report, final
 
@@ -393,25 +402,24 @@ def open_compose(session):
     # doing anything, or the compose tap lands in a conversation and the
     # recipient ends up typed into the message body.
     #
-    # Neither Escape nor the left-edge back swipe reliably leaves a conversation
-    # (the swipe simply does not register through mirroring), but the back
-    # chevron does. That same spot is "Edit" on the conversation list, so tap it
-    # and then press Escape: from a conversation we land on the list and Escape
-    # is a no-op; from the list we open the Edit menu and Escape closes it.
-    # Either way we end up on the list, without needing to know which we started
-    # from.
-    pid = session.live_frame().window.pid
-    inputs.press_key(pid, "escape")
-    settle(session, timeout_s=2.0, stable_for_s=0.2)
-    tap_at(session, *landmarks.MSG_BACK_BUTTON)
-    settle(session, timeout_s=2.5, stable_for_s=0.25)
-    inputs.press_key(pid, "escape")
-    settle(session, timeout_s=2.0, stable_for_s=0.2)
-
-    before = session.frame().image
-    tap_at(session, *landmarks.MSG_COMPOSE_BUTTON)
-    _, image = settle(session, timeout_s=4.0)
-    if not _changed_since(session, before):
+    # Do NOT use Escape to unwind: inside an iOS app it acts as "go back", and a
+    # couple of presses drop clean out to the Home Screen -- leaving the app
+    # entirely and then trying to navigate back in.
+    #
+    # Just tap Compose. If Messages resumed inside a conversation the tap does
+    # nothing, so back out once with the chevron and retry. Self-correcting,
+    # needs no guess about which screen we started on, and never leaves the app.
+    image = session.frame().image
+    for attempt in range(2):
+        before = session.frame().image
+        tap_at(session, *landmarks.MSG_COMPOSE_BUTTON)
+        _, image = settle(session, timeout_s=4.0)
+        if _changed_since(session, before):
+            break
+        if attempt == 0:
+            tap_at(session, *landmarks.MSG_BACK_BUTTON)
+            settle(session, timeout_s=3.0, stable_for_s=0.25)
+    else:
         return False, "Tapped Compose but the New Message sheet never appeared.", image
     # The sheet animates in over the list; wait for it to actually be blank
     # rather than judging it mid-transition.
@@ -532,6 +540,56 @@ def send_message(session, recipient: str, text: str, send: bool = False):
 
 
 # --------------------------------------------------------------------------
+# Confirm-and-send
+# --------------------------------------------------------------------------
+#
+# Re-running the whole draft flow just to press Send wastes ~19s and, worse,
+# rebuilds state that was already correct. Once a draft is on screen the send
+# button is at a known place, so confirming is a single tap. Verification comes
+# *after* the tap, not before -- the pre-send screenshot was already taken and
+# approved by the user.
+
+SEND_BUTTONS = {
+    "messages": landmarks.MSG_SEND_BUTTON,
+    "whatsapp": landmarks.WA_SEND_BUTTON,
+}
+
+
+def send_button_armed(session, app: str) -> bool:
+    """True while an unsent draft is still sitting in the composer.
+
+    Both apps swap the send control for a grey mic/audio glyph once the message
+    goes, so a saturated blue/green pixel at the send position means the draft
+    is still pending -- an exact, OCR-free "did it actually send" check.
+    """
+    spot = SEND_BUTTONS[app]
+    image = session.frame().image.convert("RGB")
+    x = int(image.width * spot[0])
+    y = int(image.height * spot[1])
+    x = max(0, min(image.width - 1, x))
+    y = max(0, min(image.height - 1, y))
+    # Sample a small patch: the glyph is a circle, so one pixel is fragile.
+    hits = 0
+    for dx in (-6, 0, 6):
+        for dy in (-6, 0, 6):
+            px = max(0, min(image.width - 1, x + dx))
+            py = max(0, min(image.height - 1, y + dy))
+            r, g, b = image.getpixel((px, py))
+            green = g > 110 and g - r > 40 and g - b > 30
+            blue = b > 140 and b - r > 60 and b - g > 20
+            if green or blue:
+                hits += 1
+    return hits >= 3
+
+
+def tap_send(session, app: str):
+    """Press Send on an on-screen draft and confirm it left the composer."""
+    tap_at(session, *SEND_BUTTONS[app])
+    status, image = settle(session, timeout_s=5.0, stable_for_s=0.35)
+    return (not send_button_armed(session, app)), status, image
+
+
+# --------------------------------------------------------------------------
 # WhatsApp
 # --------------------------------------------------------------------------
 #
@@ -547,26 +605,24 @@ def open_whatsapp_new_chat(session):
         return False, report, image
     settle(session, timeout_s=4.0, stable_for_s=0.35)
 
-    # WhatsApp resumes inside whatever chat was last open. Same idempotent
-    # unwind as Messages: the back chevron returns to the chat list, and on the
-    # list that spot is the "..." menu, which Escape closes.
-    pid = session.live_frame().window.pid
-    inputs.press_key(pid, "escape")
-    settle(session, timeout_s=2.0, stable_for_s=0.2)
-    tap_at(session, *landmarks.WA_BACK_BUTTON)
-    settle(session, timeout_s=2.5, stable_for_s=0.25)
-    inputs.press_key(pid, "escape")
-    settle(session, timeout_s=2.0, stable_for_s=0.2)
-
-    tap_at(session, *landmarks.WA_CHATS_TAB)
-    settle(session, timeout_s=3.0, stable_for_s=0.25)
-
-    before = session.frame().image
-    tap_at(session, *landmarks.WA_NEW_CHAT_BUTTON)
-    _, image = settle(session, timeout_s=4.0)
-    if not _changed_since(session, before):
-        return False, "Tapped New chat but the sheet never appeared.", image
-    return True, "WhatsApp New chat sheet open.", image
+    # Opening via Spotlight lands directly on the Chats list, so just tap "+".
+    # Do NOT press Escape here: inside an iOS app Escape acts as "go back", and
+    # repeated presses drop clean out to the Home Screen -- which is what made
+    # the old version leave WhatsApp and then try to navigate back into it.
+    #
+    # If the app happened to resume inside a conversation the "+" tap does
+    # nothing, so back out once with the chevron and retry. Self-correcting, and
+    # it never leaves the app.
+    for attempt in range(2):
+        before = session.frame().image
+        tap_at(session, *landmarks.WA_NEW_CHAT_BUTTON)
+        _, image = settle(session, timeout_s=4.0)
+        if _changed_since(session, before):
+            return True, "WhatsApp New chat sheet open.", image
+        if attempt == 0:
+            tap_at(session, *landmarks.WA_BACK_BUTTON)
+            settle(session, timeout_s=3.0, stable_for_s=0.25)
+    return False, "Tapped New chat but the sheet never appeared.", session.frame().image
 
 
 def pick_whatsapp_contact(session, recipient: str, index: int = 1):

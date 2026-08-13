@@ -21,10 +21,8 @@ from dataclasses import dataclass, field
 NAV_Y = 0.94                    # vertical centre of the bottom tab bar
 NAV_SPAN = (0.165, 0.833)       # horizontal centres of the first and last tab
 TOP_SEARCH_FIELD = (0.5, 0.10)  # search bar pinned below the status bar
-SPOTLIGHT_FIELD = (0.5, 0.93)   # iOS Spotlight puts its field at the *bottom*
-FIRST_RESULT = (0.5, 0.20)      # first row of a typical results list
+SPOTLIGHT_TOP_HIT = (0.161, 0.172)  # first app icon under "Top Hit"
 HOME_EMPTY_BAND = 0.82          # y of dead space between last icon row and dock
-SCREEN_MIDDLE = (0.5, 0.5)
 
 # Edge gestures start marginally off-screen so iOS reads them as edge swipes
 # rather than as in-content drags.
@@ -54,7 +52,6 @@ MSG_TO_FIELD = (0.5, 0.196)           # "To:" field on the New Message sheet
 MSG_FIRST_CONTACT = (0.5, 0.267)      # first contact suggestion under "To:"
 MSG_BODY_FIELD = (0.57, 0.960)        # message input at the bottom
 MSG_SEND_BUTTON = (0.864, 0.940)      # arrow inside the body pill's right edge
-MSG_CLOSE_COMPOSE = (0.904, 0.116)    # X on the New Message sheet
 MSG_BACK_BUTTON = (0.086, 0.095)      # '<' in a conversation; 'Edit' on the list
 
 # Vertical band the contact suggestions occupy; used to tell "matches found"
@@ -75,7 +72,6 @@ MSG_SUGGESTION_BAND = (0.24, 0.85)
 # "Tiya Rohit Nepi" -- in that order. Taking row 1 messages the wrong person, so
 # the sender exposes a row index and drafts rather than sending by default.
 
-WA_CHATS_TAB = (0.684, 0.940)         # 4th of 5 tabs
 WA_NEW_CHAT_BUTTON = (0.904, 0.095)   # green "+"
 WA_SEARCH_FIELD = (0.5, 0.179)        # "Name, number, @username"
 WA_FIRST_RESULT = (0.5, 0.238)        # first row under "Contacts on WhatsApp"
@@ -115,8 +111,6 @@ BK_HOME_TAB = (0.157, 0.940)          # 'Home' in the bottom nav
 BK_HOME_SEARCH = (0.5, 0.190)         # search bar on the home screen
 BK_HOME_SEARCH_ALT = (0.5, 0.258)     # ...before the page scrolls
 BK_SEARCH_FIELD = (0.5, 0.098)        # field on the dedicated search screen
-BK_FIRST_ADD = (0.258, 0.623)         # ADD on the first result tile
-BK_VARIANT_FIRST_ADD = (0.245, 0.804) # ADD under the first pack size
 BK_VARIANT_CLOSE = (0.5, 0.555)       # X that dismisses the variant sheet
 BK_VIEW_CART = (0.5, 0.845)           # floating "View cart" pill
 
