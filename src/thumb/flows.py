@@ -30,7 +30,7 @@ import time
 from PIL import Image as PILImage
 from PIL import ImageStat
 
-from . import ax, inputs, landmarks, mirror
+from . import ax, inputs, landmarks, mirror, vision
 from .errors import MirrorError
 
 # A frame delta above this means the screen genuinely changed, not just noise
@@ -182,13 +182,30 @@ SCROLL_VECTORS = {
 
 
 def scroll(session, direction: str = "down", amount: float = 0.6):
-    """Scroll the content area by a fraction of the screen."""
+    """Scroll the content area by roughly a fraction of the screen.
+
+    Vertical scrolling goes through wheel events, not a drag: a click-drag
+    simply does not scroll iOS lists through mirroring. Horizontal paging *is* a
+    drag, because that is a swipe gesture rather than a scroll.
+    """
     key = direction.strip().lower()
     if key not in SCROLL_VECTORS:
         raise MirrorError(
             f"Unknown scroll direction {direction!r}. Use down, up, left, or right."
         )
     amount = max(0.05, min(0.85, amount))
+
+    if key in ("down", "up"):
+        frame = session.live_frame()
+        # ~1px of wheel travel per device point, negative to move down the list.
+        pixels = int(frame.device_h * amount)
+        inputs.scroll_wheel(
+            frame,
+            frame.device_w * 0.5,
+            frame.device_h * 0.5,
+            -pixels if key == "down" else pixels,
+        )
+        return
     swipe_between(session, *SCROLL_VECTORS[key](amount), duration_ms=260)
 
 
@@ -861,3 +878,32 @@ def open_expo_app(session, url: str | None = None, use_dev_build: bool = False):
     status, image = settle(session, timeout_s=45.0, stable_for_s=0.8, threshold=1.6)
     which = "Development Build" if use_dev_build else "Expo Go"
     return f"Opened {target} in {which} ({status}).", image
+
+
+# --------------------------------------------------------------------------
+# Find things that are not on screen yet
+# --------------------------------------------------------------------------
+
+def scroll_to_text(session, text: str, direction: str = "down", max_scrolls: int = 10):
+    """Scroll until some text is visible. Returns (element, scrolls, frame).
+
+    OCR only sees what is rendered, so anything below the fold does not exist
+    as far as tap_text is concerned -- looking for "General" in Settings simply
+    fails until it is scrolled into view. This closes that gap.
+
+    Stops early when the screen stops changing, which means the list has hit its
+    end and further scrolling would just burn time.
+    """
+    for scrolls in range(max_scrolls + 1):
+        frame = session.live_frame()
+        elements = vision.recognize(frame.image, frame.device_w, frame.device_h)
+        matches = vision.find(elements, text)
+        if matches:
+            return matches[0], scrolls, frame
+
+        before = session.frame().image
+        scroll(session, direction, 0.55)
+        settle(session, timeout_s=4.0, stable_for_s=0.3)
+        if not _changed_since(session, before, threshold=2.0):
+            break  # reached the end of the list
+    return None, scrolls, session.live_frame()
