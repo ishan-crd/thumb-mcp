@@ -121,6 +121,20 @@ class Session:
 SESSION = Session()
 
 
+@dataclass
+class PendingDraft:
+    """A composed-but-unsent message waiting on the user's go-ahead."""
+
+    app: str  # "messages" | "whatsapp"
+    recipient: str
+    text: str
+    contact_index: int = 1
+
+
+# Set when a send_* tool drafts, cleared once the message actually goes.
+PENDING: PendingDraft | None = None
+
+
 def _focus_safe(fn):
     """Give keyboard focus back to the user's app once the tool finishes.
 
@@ -432,9 +446,10 @@ def search_in_app(
     description=(
         "Send a WhatsApp message. Opens WhatsApp, starts a new chat, searches "
         "the recipient, opens that chat and types the body. By default it STOPS "
-        "THERE and returns a screenshot to confirm -- call again with send=true "
-        "to actually send. WhatsApp does not rank exact name matches first, so "
-        "if the chat header shows the wrong person, retry with contact_index=2, "
+        "THERE and returns a screenshot. Show it to the user, ask whether to "
+        "send, and on yes call confirm_send() rather than re-running this tool "
+        "with send=true. WhatsApp does not rank exact name matches first, so if "
+        "the chat header shows the wrong person, retry with contact_index=2, "
         "3, ... to pick a different search result."
     )
 )
@@ -442,7 +457,13 @@ def search_in_app(
 def send_whatsapp(
     recipient: str, text: str, contact_index: int = 1, send: bool = False
 ) -> list[TextContent | ImageContent]:
+    global PENDING
     report, image = flows.send_whatsapp(SESSION, recipient, text, contact_index, send)
+    PENDING = (
+        PendingDraft("whatsapp", recipient, text, contact_index)
+        if (not send and "Drafted" in report)
+        else None
+    )
     return _shot(image, report)
 
 
@@ -450,17 +471,24 @@ def send_whatsapp(
     description=(
         "Send a text message through the built-in Messages app (iMessage/SMS). "
         "For WhatsApp use send_whatsapp instead. Opens Messages, starts a new message, resolves "
-        "the recipient to a real contact, and types the body. By default it "
-        "STOPS THERE and returns a screenshot so you can confirm who it "
-        "resolved to and what it says -- call again with send=true to actually "
-        "send. Fails loudly if no contact matches the name."
+        "the recipient to a real contact, and types the body. It STOPS THERE "
+        "and returns a screenshot. Show it to the user, ask whether to send, "
+        "and on yes call confirm_send() -- do NOT call this tool again with "
+        "send=true, which needlessly rebuilds the whole draft. Fails loudly if "
+        "no contact matches the name."
     )
 )
 @_focus_safe
 def send_message(
     recipient: str, text: str, send: bool = False
 ) -> list[TextContent | ImageContent]:
+    global PENDING
     report, image = flows.send_message(SESSION, recipient, text, send)
+    PENDING = (
+        PendingDraft("messages", recipient, text)
+        if (not send and "Drafted" in report)
+        else None
+    )
     return _shot(image, report)
 
 
@@ -550,6 +578,53 @@ def survey_home(max_pages: int = 4) -> list[TextContent | ImageContent]:
         out.append(TextContent(type="text", text=label))
         out.append(_png_content(mirror.downscale(image)))
     return out
+
+
+@server.tool(
+    description=(
+        "Send the message that is already drafted on screen, after the user has "
+        "confirmed it. This is the fast path: it presses Send directly on the "
+        "existing draft instead of rebuilding it, and only screenshots "
+        "afterwards to prove the message went and went to the right person. If "
+        "the tap does not register it rebuilds the draft and sends it in the "
+        "same call, without asking again. Use this instead of calling a send_* "
+        "tool a second time with send=true."
+    )
+)
+@_focus_safe
+def confirm_send() -> list[TextContent | ImageContent]:
+    global PENDING
+    if PENDING is None:
+        raise MirrorError(
+            "Nothing is drafted. Call send_message() or send_whatsapp() first, "
+            "show the user the draft, and confirm_send() once they agree."
+        )
+    draft = PENDING
+
+    # Straight to the send button -- the draft was already screenshotted and
+    # approved, so a second pre-send capture would only add latency.
+    sent, status, image = flows.tap_send(SESSION, draft.app)
+    if sent:
+        PENDING = None
+        return _shot(
+            image,
+            f"Sent {draft.text!r} to {draft.recipient!r} on {draft.app} "
+            f"({status}). Verified: the composer is empty.",
+        )
+
+    # The draft was still sitting in the composer, so the tap missed or the
+    # screen had moved on. Rebuild and send in one go rather than bouncing back
+    # to the user, who has already said yes.
+    if draft.app == "whatsapp":
+        report, image = flows.send_whatsapp(
+            SESSION, draft.recipient, draft.text, draft.contact_index, send=True
+        )
+    else:
+        report, image = flows.send_message(
+            SESSION, draft.recipient, draft.text, send=True
+        )
+    PENDING = None
+    return _shot(image, "Send did not register, so the draft was rebuilt. " + report)
 
 
 def main() -> None:
