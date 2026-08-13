@@ -114,6 +114,7 @@ round trip.
 
 | Tool | What it does |
 |---|---|
+| `open_expo_app(url=None, use_dev_build=False)` | **Open your Expo dev-server project on the phone.** Safari → dev URL → Expo Go → confirm handoff → wait for the bundle. Auto-detects the Mac's LAN address |
 | `confirm_send()` | **Send the draft already on screen.** Taps Send directly — no rebuild, no second screenshot first — then verifies. Rebuilds and sends automatically if the tap misses |
 | `send_whatsapp(recipient, text, contact_index=1, send=False)` | **Send a WhatsApp message.** Opens WhatsApp → New chat → search → open chat → type. Drafts by default |
 | `send_message(recipient, text, send=False)` | **Send a text.** Opens Messages → New Message → resolves the recipient to a real contact → types the body. Stops there by default and returns a screenshot to confirm; only sends with `send=true` |
@@ -146,6 +147,22 @@ the layout — it replaces a swipe-and-screenshot loop with a single call.
 
 Composite flows already settle internally, so `wait_until_settled()` is only
 needed after a raw `tap`/`swipe`.
+
+### Running your Expo project on the phone
+
+```
+open_expo_app()          # exp://<mac-lan-ip>:8081, straight into Expo Go
+open_expo_app(use_dev_build=True)   # http:// page, picks "Development Build"
+```
+
+**The phone cannot reach your Mac's `localhost`** — on the device that means the
+phone itself, so `http://localhost:8081` silently fails. The flow detects the
+Mac's LAN address instead, and refuses a localhost URL with the right one rather
+than failing mysteriously.
+
+It defaults to the `exp://` deep link, which hands straight off to Expo Go and
+skips the dev-server page and its button entirely. `use_dev_build=True` switches
+to `http://` so that page's "Development Build" option can be chosen.
 
 ### Draft, confirm, send
 

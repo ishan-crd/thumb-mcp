@@ -51,6 +51,7 @@ from PIL import ImageStat
 
 from . import inputs, landmarks
 from .flows import (
+    _band_brightness,
     _changed_since,
     clear_field,
     open_app,
@@ -65,12 +66,6 @@ from .flows import (
 #
 # Deliberately stops at the cart. Adding items is reversible; placing an order
 # spends real money, so the flow hands the user a filled cart and lets them pay.
-
-def _band_brightness(image, top: float, bottom: float) -> float:
-    height = image.height
-    box = (0, int(height * top), image.width, int(height * bottom))
-    return ImageStat.Stat(image.crop(box).convert("L")).mean[0]
-
 
 def find_add_buttons(image, min_w: int = 60, min_h: int = 30):
     """Locate Blinkit's green-outlined ADD buttons, top-left first.

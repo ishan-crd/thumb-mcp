@@ -24,6 +24,7 @@ typing into the wrong screen.
 
 from __future__ import annotations
 
+import subprocess
 import time
 
 from PIL import Image as PILImage
@@ -69,6 +70,13 @@ def settle(
         else:
             stable_since = None
     return f"still changing after {timeout_s:g}s ({polls} frames)", previous
+
+
+def _band_brightness(image, top: float, bottom: float) -> float:
+    """Mean luminance of a horizontal band -- used to spot dimming overlays."""
+    height = image.height
+    box = (0, int(height * top), image.width, int(height * bottom))
+    return ImageStat.Stat(image.crop(box).convert("L")).mean[0]
 
 
 def _changed_since(session, before: PILImage.Image, threshold: float = CHANGED) -> bool:
@@ -703,3 +711,153 @@ def send_whatsapp(
             image,
         )
     return f"Sent {text!r} to {recipient!r} on WhatsApp ({status}).", image
+
+
+# --------------------------------------------------------------------------
+# Expo dev server
+# --------------------------------------------------------------------------
+
+def lan_url(port: int = 8081, scheme: str = "exp") -> str | None:
+    """This Mac's LAN URL for a dev server, e.g. http://192.168.1.5:8081.
+
+    The phone cannot reach the Mac's ``localhost`` -- on the device that means
+    the *phone*. A dev server has to be addressed by the Mac's LAN IP, so the
+    common mistake of pasting http://localhost:8081 silently fails.
+    """
+    for interface in ("en0", "en1"):
+        try:
+            out = subprocess.run(["ipconfig", "getifaddr", interface],
+                                 capture_output=True, text=True, timeout=3).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if out:
+            return f"{scheme}://{out}:{port}"
+    return None
+
+
+def wait_for_brightness(session, top, bottom, minimum: float, timeout_s: float = 20.0):
+    """Poll until a band gets at least this bright. Returns (ok, frame)."""
+    deadline = time.monotonic() + timeout_s
+    image = session.frame().image
+    while True:
+        image = session.frame().image
+        if _band_brightness(image, top, bottom) >= minimum:
+            return True, image
+        if time.monotonic() >= deadline:
+            return False, image
+        time.sleep(0.2)
+
+
+def _alert_showing(session) -> bool:
+    """True while iOS's "Open this page in X?" alert is on screen.
+
+    Detects the alert's blue "Open" text rather than the dimming it applies.
+    Dimming is not usable as a signal: the page behind is often dark already, so
+    a brightness test fires on any dark screen -- which made the flow "see" the
+    alert before it existed, tap empty space, and then sit there while the real
+    alert appeared. Measured 0.029 blue with the alert up, 0.0000 without.
+    """
+    left, top, right, bottom = landmarks.ALERT_BUTTON_REGION
+    image = session.frame().image.convert("RGB")
+    width, height = image.size
+    px = image.load()
+    total = hits = 0
+    for y in range(int(height * top), int(height * bottom)):
+        for x in range(int(width * left), int(width * right)):
+            r, g, b = px[x, y]
+            total += 1
+            if b > 170 and b - r > 60 and b - g > 40:
+                hits += 1
+    return total > 0 and (hits / total) >= landmarks.ALERT_BLUE_MIN_RATIO
+
+
+def open_expo_app(session, url: str | None = None, use_dev_build: bool = False):
+    """Safari -> dev-server URL -> open the project in Expo. One screenshot.
+
+    Every intermediate step is verified from frames the flow already captures,
+    so only the final loaded screen is handed back.
+    """
+    # exp:// is the deep link: Safari hands straight off to Expo Go, skipping
+    # the dev-server page and its "Expo Go" button. http:// is only needed when
+    # the caller wants to choose "Development Build" from that page.
+    target = url or lan_url(scheme="http" if use_dev_build else "exp")
+    if not target:
+        return "Could not work out this Mac's LAN address for the dev server.", \
+            session.frame().image
+    if "localhost" in target or "127.0.0.1" in target:
+        return (
+            f"{target!r} will not work from the phone -- on the device localhost "
+            "is the phone itself. Pass the Mac's LAN URL "
+            f"(this Mac appears to be {lan_url()}).",
+            session.frame().image,
+        )
+
+    report, image = open_app(session, "Safari")
+    if "Could not" in report or "never opened" in report:
+        return report, image
+    settle(session, timeout_s=4.0, stable_for_s=0.3)
+
+    tap_at(session, *landmarks.SAFARI_URL_BAR)
+    settle(session, timeout_s=4.0, stable_for_s=0.3)
+
+    pid = session.live_frame().window.pid
+    clear_field(pid, 60)
+    inputs.type_text(pid, target)
+    # Let Safari's inline autocomplete settle before committing, or Return can
+    # be swallowed by the suggestion list.
+    settle(session, timeout_s=3.0, stable_for_s=0.3)
+
+    # "The screen changed" is not good enough: opening Safari's suggestion list
+    # changes the screen too, and an earlier version happily reported success
+    # while still sitting in that dropdown. Wait for one of the two things that
+    # actually mean the URL committed:
+    #
+    #   exp://   -> iOS's "Open this page in Expo Go?" dialog (it dims the page)
+    #   http://  -> the dev-server page, which is white
+    top, bottom = landmarks.EXPO_DIALOG_BAND
+    committed = False
+    for _ in range(2):
+        inputs.press_key(pid, "return")
+        deadline = time.monotonic() + 15.0
+        while time.monotonic() < deadline:
+            if _alert_showing(session) or _band_brightness(
+                session.frame().image, top, bottom
+            ) >= 180.0:
+                committed = True
+                break
+            time.sleep(0.2)
+        if committed:
+            break
+    if not committed:
+        return (
+            f"Typed {target} but nothing committed -- Safari stayed on its "
+            "suggestion list. Check the dev server is reachable from the phone.",
+            session.frame().image,
+        )
+
+    # With http:// we land on the dev-server page and still have to choose how
+    # to open the project. With exp:// the handoff dialog is already up.
+    if not _alert_showing(session):
+        settle(session, timeout_s=6.0, stable_for_s=0.4)
+        button = (
+            landmarks.EXPO_DEV_BUILD_BUTTON if use_dev_build
+            else landmarks.EXPO_GO_BUTTON
+        )
+        tap_at(session, *button)
+        settle(session, timeout_s=4.0, stable_for_s=0.3)
+
+    # iOS only asks the first time it hands off to a given app, so check rather
+    # than tapping a dialog that may not be there.
+    # Wait for the alert rather than assuming it is already up: it can take a
+    # moment to appear after the URL commits.
+    deadline = time.monotonic() + 6.0
+    while time.monotonic() < deadline and not _alert_showing(session):
+        time.sleep(0.2)
+    if _alert_showing(session):
+        tap_at(session, *landmarks.IOS_CONFIRM_OPEN)
+        settle(session, timeout_s=4.0, stable_for_s=0.3)
+
+    # Bundling takes a while; wait long and loosely for it to go quiet.
+    status, image = settle(session, timeout_s=45.0, stable_for_s=0.8, threshold=1.6)
+    which = "Development Build" if use_dev_build else "Expo Go"
+    return f"Opened {target} in {which} ({status}).", image

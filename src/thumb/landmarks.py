@@ -182,3 +182,25 @@ def canonical_name(app: str) -> str:
     """Resolve an alias to the real app name to type into Spotlight."""
     profile, known = profile_for(app)
     return profile.name if known else app
+
+
+# --------------------------------------------------------------------------
+# Safari + Expo dev server
+# --------------------------------------------------------------------------
+#
+# Safari on iOS 18/26 keeps its address bar at the *bottom*. The Expo dev-server
+# page offers two ways to open a project, and iOS then asks for confirmation
+# before handing off to another app -- that confirm dialog dims the page, which
+# is how the flow knows whether it needs dismissing (measured 148 with the
+# dialog up vs 246 without).
+
+SAFARI_URL_BAR = (0.5, 0.932)
+EXPO_DEV_BUILD_BUTTON = (0.5, 0.773)
+EXPO_GO_BUTTON = (0.5, 0.830)
+IOS_CONFIRM_OPEN = (0.845, 0.506)   # "Open" in the app-handoff dialog
+EXPO_DIALOG_BAND = (0.10, 0.40)
+# Region around the alert's "Open" button, and how much iOS-blue text must be
+# in it to count as a dialog. Detecting the *button* rather than the dimming is
+# what makes this work over a dark page -- see _alert_showing().
+ALERT_BUTTON_REGION = (0.74, 0.47, 0.96, 0.55)
+ALERT_BLUE_MIN_RATIO = 0.005
