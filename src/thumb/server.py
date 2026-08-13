@@ -18,6 +18,7 @@ from .errors import (
     AccessibilityDenied,
     CoordinatesOutOfRange,
     MirrorError,
+    MirroringNotRunning,
     MirroringPaused,
     ScreenRecordingDenied,
     WindowNotFound,
@@ -83,6 +84,13 @@ class Session:
         it brings them back, so treat that as recovery rather than a hard error.
         """
         try:
+            return mirror.find_window()
+        except MirroringNotRunning:
+            # The app exits by itself once a session ends. Relaunching is always
+            # the right move -- there is nothing for a human to decide here.
+            if not mirror.launch_app():
+                raise
+            time.sleep(2.0)
             return mirror.find_window()
         except WindowNotFound:
             pid = mirror.mirroring_pid()
@@ -439,6 +447,24 @@ def search_in_app(
     tab_count: int | None = None,
 ) -> list[TextContent | ImageContent]:
     report, image = flows.search_in_app(SESSION, app, query, tab_index, tab_count)
+    return _shot(image, report)
+
+
+@server.tool(
+    description=(
+        "Open the running Expo dev-server project on the phone, in one call: "
+        "Safari -> the dev-server URL -> 'Expo Go' -> confirm the handoff -> "
+        "wait for the JS bundle to build. Leave url unset to use this Mac's LAN "
+        "address automatically (the phone cannot reach localhost -- that is the "
+        "phone itself). Set use_dev_build=true to pick 'Development Build' "
+        "instead of 'Expo Go'."
+    )
+)
+@_focus_safe
+def open_expo_app(
+    url: str | None = None, use_dev_build: bool = False
+) -> list[TextContent | ImageContent]:
+    report, image = flows.open_expo_app(SESSION, url, use_dev_build)
     return _shot(image, report)
 
 
