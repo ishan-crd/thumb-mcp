@@ -115,6 +115,8 @@ round trip.
 | Tool | What it does |
 |---|---|
 | `open_expo_app(url=None, use_dev_build=False)` | **Open your Expo dev-server project on the phone.** Safari → dev URL → Expo Go → confirm handoff → wait for the bundle. Auto-detects the Mac's LAN address |
+| `describe_screen(include_image=False)` | **Every text element on screen with tap coordinates.** Text-only by default — far cheaper than an image |
+| `tap_text("Wallet")` | **Tap on-screen text by name.** No coordinates, survives layout changes |
 | `confirm_send()` | **Send the draft already on screen.** Taps Send directly — no rebuild, no second screenshot first — then verifies. Rebuilds and sends automatically if the tap misses |
 | `send_whatsapp(recipient, text, contact_index=1, send=False)` | **Send a WhatsApp message.** Opens WhatsApp → New chat → search → open chat → type. Drafts by default |
 | `send_message(recipient, text, send=False)` | **Send a text.** Opens Messages → New Message → resolves the recipient to a real contact → types the body. Stops there by default and returns a screenshot to confirm; only sends with `send=true` |
@@ -163,6 +165,32 @@ than failing mysteriously.
 It defaults to the `exp://` deep link, which hands straight off to Expo Go and
 skips the dev-server page and its button entirely. `use_dev_build=True` switches
 to `http://` so that page's "Development Build" option can be chosen.
+
+### Reading the screen
+
+```
+describe_screen()      -> "(302, 175) Wallet →", "(112, 278) Available $0", ...
+tap_text("Wi-Fi")      -> taps it, no coordinates involved
+```
+
+Uses Apple's Vision framework locally — no API key, no network, nothing leaves
+the machine. `describe_screen()` returns text only unless you ask for the image,
+which makes it much cheaper than a screenshot for "what's on screen right now".
+
+This is the antidote to the brittleness elsewhere in this codebase: hard-coded
+tile positions, colour-sniffing for buttons, brightness thresholds to guess
+whether a dialog is up. When you can read the screen, you tap the word.
+
+Two things to know:
+
+* It reports where the **text** is. For Home Screen icons that is the *label*,
+  and tapping a label does not launch the app — use `open_app()` for that.
+* Only what is currently visible is recognised. A row below the fold is not
+  there until you scroll to it.
+
+Recognition defaults to Vision's accurate mode: fast mode misread "Ishan" as
+"Ish8n", which matters when the text is used to aim a tap, and accurate only
+costs ~125ms. Set `THUMB_OCR_FAST=1` to trade back.
 
 ### Draft, confirm, send
 
