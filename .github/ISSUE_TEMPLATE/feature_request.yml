@@ -1,0 +1,36 @@
+name: Feature request
+description: A new tool, flow, or app profile
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: ask
+    attributes:
+      label: What would you say to Claude?
+      description: The request in plain words is the best spec.
+      placeholder: "\"order my usual from Blinkit\" / \"reply to the last WhatsApp from Rohit\""
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - App profile (one line in APP_PROFILES)
+        - Composite flow (a new one-call tool)
+        - Primitive / gesture
+        - Skills / recording
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps on the phone, if you know them
+      description: Which taps get there by hand? Screenshots of each screen help enormously.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety
+      options:
+        - label: This can send, pay, delete or order something — it needs a draft + confirm step

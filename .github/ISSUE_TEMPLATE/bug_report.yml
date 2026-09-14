@@ -1,0 +1,42 @@
+name: Bug report
+description: A tool did the wrong thing, or nothing, against the phone
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Which tool did you call, with what arguments, and what did the mirroring window show?
+      placeholder: "tap_text(\"Wi-Fi\") returned ok but the toggle didn't change; the screen was still on General."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: device_info
+    attributes:
+      label: device_info() output
+      description: "`uv run python -c \"import thumb.server as s; print(s.device_info())\"` — it names the host app, permissions and coordinate space."
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      placeholder: "macOS 15.6 · iOS 18.5 · iPhone 15 · thumb-mcp 0.1.0 · Claude Code 2.1 / Claude Desktop"
+    validations:
+      required: true
+  - type: input
+    id: app
+    attributes:
+      label: App on the phone
+      placeholder: "Settings, WhatsApp, …"
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshot, log, or anything else

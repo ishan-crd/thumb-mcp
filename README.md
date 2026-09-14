@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="thumb MCP" width="200">
+  <img src="https://raw.githubusercontent.com/ishan-crd/thumb-mcp/main/assets/logo.png" alt="thumb MCP" width="200">
 </p>
 
 <p align="center">
@@ -412,6 +412,12 @@ Things that are silently wrong if done the obvious way — kept here so nobody r
 - **Fields are cleared with backspace, not Cmd-A** — the synthesised Command flag isn't honoured.
 - **Silent no-ops are the failure mode to design against.** `flows.assert_changed()` fails loudly where a
   no-op is always a bug, and `scroll()` reports when it did not move.
+
+## Contributing
+
+Issues and pull requests are welcome — new app profiles, flows, and fixes for anything that silently
+no-ops. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the setup, the test suite, and what a good PR looks
+like. Security-relevant reports go through [SECURITY.md](SECURITY.md).
 
 ## License
 
