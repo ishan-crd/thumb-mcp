@@ -1,207 +1,227 @@
-# thumb-mcp
+<p align="center">
+  <img src="assets/logo.png" alt="thumb MCP" width="200">
+</p>
 
-Control your iPhone from Claude, through the macOS **iPhone Mirroring** app.
+<h1 align="center">thumb</h1>
 
-Claude gets the primitives — screenshot, tap, swipe, type — plus one-call
-shortcuts for the things you actually ask for: `open_app("insta")`,
-`search_in_app("instagram", "akshit")`, `scroll("down")`. Shortcuts drive the
-phone from a table of known UI positions instead of screenshotting between every
-step, so a "open X and search Y" request is one round trip, not ten.
+<p align="center">
+  <b>Give your Claude a thumb.</b><br>
+  An open-source MCP server that lets Claude use your iPhone through macOS <b>iPhone Mirroring</b> —
+  see the screen, tap, type, scroll, send messages, run recorded skills.
+</p>
 
-No jailbreak, no developer profile, no WebDriverAgent — it drives the same
-mirroring window you already use by hand.
+<p align="center">
+  <a href="https://github.com/ishan-crd/thumb-mcp/actions/workflows/test.yml"><img alt="tests" src="https://github.com/ishan-crd/thumb-mcp/actions/workflows/test.yml/badge.svg"></a>
+  <img alt="macOS 15+" src="https://img.shields.io/badge/macOS-15%2B-black">
+  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776AB">
+  <img alt="MIT" src="https://img.shields.io/badge/license-MIT-green">
+</p>
 
 ---
 
-## Requirements
+```
+you:    open Settings and turn on Wi-Fi
+claude: open_app("Settings") → scroll_to("Wi-Fi", tap=True) → tap_text("Wi-Fi")   ✓
+
+you:    text Rohit "running 10 min late"
+claude: send_message("Rohit", "running 10 min late")   → shows you the draft
+you:    send it
+claude: confirm_send()   ✓ delivered
+```
+
+No jailbreak, no developer profile, no WebDriverAgent. thumb drives the same mirroring window you already
+use by hand: it reads the screen with Apple's on-device Vision OCR (`describe_screen`, `tap_text`,
+`wait_for_text`) and sends real input events. One-call shortcuts (`open_app`, `search_in_app`,
+`send_whatsapp`, `open_expo_app`) run whole flows without a screenshot between every step.
+
+## Contents
+
+1. [Requirements](#1-requirements)
+2. [Install](#2-install)
+3. [Grant permissions](#3-grant-permissions)
+4. [Connect it to Claude](#4-connect-it-to-claude)
+5. [First run](#5-first-run)
+6. [Tools](#6-tools)
+7. [Skills: record once, replay after](#7-skills-record-once-replay-after)
+8. [Exploring an app](#8-exploring-an-app)
+9. [Constraints worth knowing](#9-constraints-worth-knowing)
+10. [Troubleshooting](#10-troubleshooting)
+11. [Development](#11-development)
+12. [Implementation notes](#12-implementation-notes)
+
+---
+
+## 1. Requirements
 
 | | |
 |---|---|
-| macOS | 15 (Sequoia) or later, on Apple silicon |
-| iOS | 18 or later |
-| Setup | Mac and iPhone signed into the **same Apple Account**, Bluetooth + Wi-Fi on, iPhone Mirroring already paired and working manually once |
-| Python | 3.11+ (managed by `uv`) |
+| Mac | macOS 15 Sequoia or later, Apple silicon |
+| iPhone | iOS 18 or later |
+| Apple Account | Mac and iPhone signed into the **same** account, Bluetooth + Wi-Fi on |
+| iPhone Mirroring | Paired and working **by hand once** — open the app, connect, see your phone |
+| uv | [Astral's uv](https://docs.astral.sh/uv/) — installs Python 3.11+ and the server for you |
 
-iPhone Mirroring is not available in every region. If the app is missing or
+iPhone Mirroring is not available in every region (notably the EU and China). If the app is missing or
 refuses to connect, that is an Apple-side restriction, not this server.
 
----
-
-## Install
-
-Once published, no clone is needed:
-
 ```bash
-uvx thumb-mcp        # runs the server; uv fetches it on first use
+# uv, if you don't have it
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Or from source, to hack on it:
+## 2. Install
+
+**Straight from GitHub, no clone** — `uvx` fetches, builds and caches it on first use:
+
+```bash
+uvx --from git+https://github.com/ishan-crd/thumb-mcp thumb-mcp
+```
+
+That starts the server on stdio (it waits for an MCP client — that's normal; `Ctrl-C` to stop). The
+same command goes into your Claude config in step 4.
+
+**From a checkout**, to hack on it:
 
 ```bash
 git clone https://github.com/ishan-crd/thumb-mcp && cd thumb-mcp
 uv sync
+uv run thumb-mcp
 ```
 
-Verify everything before wiring it into Claude:
+> Once the package is on PyPI, `uvx thumb-mcp` is all you need.
+
+## 3. Grant permissions
+
+macOS grants screen and input permissions to the **application that launches the server**, not to
+Python. From Claude Desktop, *Claude Desktop* needs the grants. From Claude Code in Terminal, *Terminal*
+does; in iTerm, *iTerm*; in Cursor, *Cursor*.
+
+Grant both, then **fully quit and reopen** that app (macOS only applies a new Screen Recording grant on
+relaunch):
+
+| Permission | Where | Why |
+|---|---|---|
+| **Screen Recording** | System Settings › Privacy & Security › *Screen & System Audio Recording* → **+** → add the host app → toggle on | Capturing the mirrored screen. Without it, screenshots are blank |
+| **Accessibility** | System Settings › Privacy & Security › *Accessibility* → **+** → add the host app → toggle on | Sending taps, swipes and keystrokes. Without it, input is silently dropped |
+
+Not sure which app is the host? Ask the server — it names it:
 
 ```bash
+uv run --with git+https://github.com/ishan-crd/thumb-mcp python -c "import thumb.server as s; print(s.device_info())"
+# or from a checkout:
 uv run python -c "import thumb.server as s; print(s.device_info())"
 ```
 
-That prints permissions, window geometry, the detected coordinate space, and
-whether the phone is currently streaming. Fix anything it reports before
-continuing.
+That prints permissions, the host process it detected, window geometry, the coordinate space, and whether
+the phone is currently streaming. Fix anything it reports before continuing.
 
----
+## 4. Connect it to Claude
 
-## Permissions — read this part
-
-macOS grants screen and input permissions to the **application that launches the
-server**, not to Python. If you run this from Claude Desktop, *Claude Desktop*
-needs the grants. From a terminal, that terminal app does. From Claude Code in
-iTerm, *iTerm* does.
-
-`device_info()` prints the exact host process it detected, so you don't have to
-guess.
-
-Grant both:
-
-1. **Screen Recording** — required to capture the mirrored screen.
-   `System Settings › Privacy & Security › Screen & System Audio Recording`
-   Add the host app with **+** if it isn't listed, enable the toggle, then
-   **fully quit and reopen that app**. macOS only applies a new Screen Recording
-   grant on relaunch.
-
-2. **Accessibility** — required to send taps, swipes, and keystrokes.
-   `System Settings › Privacy & Security › Accessibility`
-   Add the host app, enable the toggle, restart it.
-
-Without Screen Recording, capture returns blank frames. Without Accessibility,
-input is silently dropped. The server checks both up front and fails with the
-pane name rather than misbehaving quietly.
-
----
-
-## Wiring it into Claude
-
-**Claude Code**
+**Claude Code** (one command, remembered per machine):
 
 ```bash
-claude mcp add thumb -- uvx thumb-mcp
+claude mcp add thumb -- uvx --from git+https://github.com/ishan-crd/thumb-mcp thumb-mcp
 ```
 
-From a source checkout instead:
+From a checkout instead:
 
 ```bash
 claude mcp add thumb -- uv --directory /absolute/path/to/thumb-mcp run thumb-mcp
 ```
 
-**Claude Desktop** — `~/Library/Application Support/Claude/claude_desktop_config.json`:
+**Claude Desktop** — Settings › Developer › Edit Config, which opens
+`~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "thumb": {
       "command": "uvx",
-      "args": ["thumb-mcp"]
+      "args": ["--from", "git+https://github.com/ishan-crd/thumb-mcp", "thumb-mcp"]
     }
   }
 }
 ```
 
-Use the absolute path form (`"command": "uv"`, `"args": ["--directory", "/path/to/thumb-mcp", "run", "thumb-mcp"]`) if you are running from a checkout. Either way, `which uvx` if the binary isn't found — GUI apps don't inherit your shell `PATH`.
+Restart Claude Desktop afterwards. For a checkout use `"command": "uv"` with
+`"args": ["--directory", "/path/to/thumb-mcp", "run", "thumb-mcp"]`.
 
----
+**Other MCP clients** (Cursor, Windsurf, Zed, …) take the same `command` + `args`; the server speaks
+plain stdio MCP.
 
-## Tools
+> GUI apps don't inherit your shell `PATH`. If the client reports `uvx: command not found`, use the
+> absolute path from `which uvx` (usually `~/.local/bin/uvx`).
+
+## 5. First run
+
+1. Open **iPhone Mirroring** on the Mac and connect. Leave the window visible — don't cover it.
+2. Lock the iPhone and put it down. Mirroring stops the moment you pick it up.
+3. In Claude, ask for something small and visible:
+
+```
+take a screenshot of my iPhone
+what's on screen right now?               → describe_screen()
+open Settings and scroll to General        → open_app + scroll_to
+text Rohit "on my way" — draft only        → send_message(..., send=False)
+```
+
+Claude drafts messages and shows you the screenshot first; nothing is sent until you say so
+(`confirm_send`). If a tool reports *"iPhone in Use"*, the phone was picked up — lock it and call
+`reconnect()`.
+
+## 6. Tools
 
 ### Composite flows — prefer these
 
-Each is one call that runs a known-good sequence and returns the **settled**
-screen. They exist because driving a phone one primitive at a time is slow and
-error-prone: every tap needs a screenshot to aim it, and every screenshot is a
-round trip.
+Each is one call that runs a known-good sequence and returns the **settled** screen. Driving a phone one
+primitive at a time is slow and error-prone — every tap needs a screenshot to aim it, and every
+screenshot is a round trip.
 
 | Tool | What it does |
 |---|---|
-| `open_url(url)` | Open any URL or deep link (`exp://`, `maps://`) on the phone, verified |
-| `get_orientation()` | Portrait or landscape |
-| `open_expo_app(url=None, use_dev_build=False)` | **Open your Expo dev-server project on the phone.** Safari → dev URL → Expo Go → confirm handoff → wait for the bundle. Auto-detects the Mac's LAN address |
 | `describe_screen(include_image=False)` | **Every text element on screen with tap coordinates.** Text-only by default — far cheaper than an image |
 | `tap_text("Wallet")` | **Tap on-screen text by name.** No coordinates, survives layout changes |
-| `confirm_send()` | **Send the draft already on screen.** Taps Send directly — no rebuild, no second screenshot first — then verifies. Rebuilds and sends automatically if the tap misses |
-| `send_whatsapp(recipient, text, contact_index=1, send=False)` | **Send a WhatsApp message.** Opens WhatsApp → New chat → search → open chat → type. Drafts by default |
-| `send_message(recipient, text, send=False)` | **Send a text.** Opens Messages → New Message → resolves the recipient to a real contact → types the body. Stops there by default and returns a screenshot to confirm; only sends with `send=true` |
-| `search_in_app(app, query)` | **Open an app and search inside it in one call** — Home → Spotlight → launch → Search tab → search field → type. No intermediate screenshots |
-| `open_app(name)` | Home → Spotlight → type → launch top hit. One call, ~6s |
+| `wait_for_text("Done", gone=False)` | Wait for text to appear or disappear — works on screens that never go still |
+| `open_app("insta")` | Home → Spotlight → type → launch top hit. Aliases resolve (`insta` → Instagram) |
+| `search_in_app("instagram", "akshit")` | **Open an app and search inside it in one call** |
+| `open_url(url)` | Open a URL or deep link (`exp://`, `maps://`), verified |
+| `open_expo_app(url=None, use_dev_build=False)` | **Run your Expo dev-server project on the phone.** Detects the Mac's LAN address, hands off to Expo Go |
+| `send_message(recipient, text, send=False)` | **iMessage.** Resolves a real contact, types the body, **drafts by default** and returns a screenshot |
+| `send_whatsapp(recipient, text, contact_index=1, send=False)` | **WhatsApp.** Same shape; `contact_index` picks the row when names collide |
+| `confirm_send()` | Press Send on the draft already on screen (~2s), verify, rebuild-and-send if the tap missed |
+| `scroll(direction, amount=0.6)` | Scroll `down` / `up` / `left` / `right` by a fraction of the screen |
+| `scroll_to("General", tap=False)` | Scroll until text appears, optionally tap it |
+| `go_back()` / `go_to_root(max_steps=5)` | Back chevron once / all the way to the app's root screen |
 | `tap_and_type(x, y, text)` | Focus a field and type, waiting for focus first |
-| `survey_home(max_pages=4)` | Pages across the Home Screen, returning **one screenshot per page in a single call**. Stops early at the last page |
-| `scroll(direction, amount=0.6)` | Scroll `down`/`up`/`left`/`right` by a fraction of the screen |
-| `scroll_to("General", tap=False)` | **Scroll until text appears**, then optionally tap it |
-| `go_back()` | Tap the app's top-left back chevron; fails loudly at a root screen |
-| `go_to_root(max_steps=5)` | **Back out to the app's root screen** — a known starting point after `open_app` |
+| `survey_home(max_pages=4)` | One screenshot per Home Screen page, in a single call |
+| `get_orientation()` | Portrait or landscape |
 
-`open_app` uses Spotlight rather than hunting for an icon: it's one deterministic
-path no matter which page the app lives on, needs no pixel search, and Return
-launches the top hit directly. Use `survey_home()` when you actually need to see
-the layout — it replaces a swipe-and-screenshot loop with a single call.
+Apps with built-in layouts (`APP_PROFILES`): Messages, WhatsApp, Instagram, X, Threads, YouTube,
+Spotify, Maps, App Store, Blinkit. Unknown apps fall back to a generic layout rather than failing.
 
 ### Primitives
 
 | Tool | What it does |
 |---|---|
 | `screenshot()` | The mirrored screen, plus the coordinate space to use |
-| `tap(x, y)` | Tap at a device point |
-| `swipe(x1, y1, x2, y2, duration_ms=300)` | Flick/scroll between two device points |
-| `long_press(x, y, hold_ms=700)` | Press and hold — context menus, previews, icon pickup |
-| `double_tap(x, y)` | Two taps in quick succession |
-| `drag(x1, y1, x2, y2)` | Pick up, move, drop — reordering and drag-and-drop |
-| `type_text(text)` | Type into the focused field (unicode + emoji) |
-| `press_key(key)` | `return`, `delete`, `escape`, `tab`, `space`, arrows |
-| `home()` / `app_switcher()` / `spotlight()` | Driven via the app's real menu items |
+| `tap(x, y)` · `double_tap(x, y)` · `long_press(x, y, hold_ms=700)` | Taps at a device point |
+| `swipe(x1, y1, x2, y2, duration_ms=300)` | Flick/scroll — stays under iOS's long-press threshold |
+| `drag(x1, y1, x2, y2)` | Pick up, move, drop — deliberately slower than a swipe |
+| `type_text(text)` · `press_key(key)` | Type into the focused field (unicode + emoji); `return`, `delete`, `escape`, `tab`, `space`, arrows |
+| `home()` · `app_switcher()` · `spotlight()` | Driven via the app's real menu items, verified |
 | `wait_until_settled(timeout_s=5)` | Poll until the screen stops animating |
-| `wait_for_text("Done", gone=False)` | **Wait for text to appear or disappear** — precise, and works on screens that never go still |
-| `device_info()` | Geometry, permissions, streaming state — for debugging |
-| `reconnect()` | Press Connect/Resume to resume a paused session |
+| `device_info()` | Geometry, permissions, host app, streaming state |
+| `reconnect()` | Press Connect/Resume after the phone was picked up |
 
-`swipe` and `drag` are deliberately different gestures: a swipe must stay
-*under* iOS's ~500ms long-press threshold or it becomes a drag (which is how a
-Home Screen swipe once rearranged apps into a folder), while a drag must exceed
-it so the item lifts before moving.
+Composite flows settle internally; `wait_until_settled()` is only needed after a raw `tap`/`swipe`.
 
-Composite flows already settle internally, so `wait_until_settled()` is only
-needed after a raw `tap`/`swipe`.
+### Coordinates
 
-### Running your Expo project on the phone
-
-```
-open_expo_app()          # exp://<mac-lan-ip>:8081, straight into Expo Go
-open_expo_app(use_dev_build=True)   # http:// page, picks "Development Build"
-```
-
-**The phone cannot reach your Mac's `localhost`** — on the device that means the
-phone itself, so `http://localhost:8081` silently fails. The flow detects the
-Mac's LAN address instead, and refuses a localhost URL with the right one rather
-than failing mysteriously.
-
-It defaults to the `exp://` deep link, which hands straight off to Expo Go and
-skips the dev-server page and its button entirely. `use_dev_build=True` switches
-to `http://` so that page's "Development Build" option can be chosen.
-
-### Waiting
-
-`wait_until_settled()` waits for the screen to stop moving, which is a *proxy*
-for "ready" and fails on anything animated — an autoplaying feed never settles,
-and a spinner keeps a screen busy indefinitely.
-
-When you know what you are waiting for, say so:
-
-```
-wait_for_text("Done")                  # until it appears
-wait_for_text("Loading", gone=True)    # until it goes away
-```
-
-Faster too: found in 0.4s on a screen that was already showing it.
+All coordinates are **device points**, origin top-left of the phone screen — never Mac screen
+coordinates, never pixels of the returned image. `screenshot()` states the space every time (e.g.
+`393 x 852`). The image is downscaled to keep token cost sane, so use the numbers it reports. Window
+bounds are re-read on every call, so moving, zooming or re-docking the mirroring window mid-session is
+safe.
 
 ### Reading the screen
 
@@ -210,24 +230,10 @@ describe_screen()      -> "(302, 175) Wallet →", "(112, 278) Available $0", ..
 tap_text("Wi-Fi")      -> taps it, no coordinates involved
 ```
 
-Uses Apple's Vision framework locally — no API key, no network, nothing leaves
-the machine. `describe_screen()` returns text only unless you ask for the image,
-which makes it much cheaper than a screenshot for "what's on screen right now".
-
-This is the antidote to the brittleness elsewhere in this codebase: hard-coded
-tile positions, colour-sniffing for buttons, brightness thresholds to guess
-whether a dialog is up. When you can read the screen, you tap the word.
-
-Two things to know:
-
-* It reports where the **text** is. For Home Screen icons that is the *label*,
-  and tapping a label does not launch the app — use `open_app()` for that.
-* Only what is currently visible is recognised. A row below the fold is not
-  there until you scroll to it.
-
-Recognition defaults to Vision's accurate mode: fast mode misread "Ishan" as
-"Ish8n", which matters when the text is used to aim a tap, and accurate only
-costs ~125ms. Set `THUMB_OCR_FAST=1` to trade back.
+Uses Apple's Vision framework locally — no API key, no network, nothing leaves the machine. Two things
+to know: it reports where the **text** is (for Home Screen icons that's the label — tapping it does not
+launch the app; use `open_app()`), and only what is currently visible is recognised. Recognition uses
+Vision's accurate mode (fast mode misread "Ishan" as "Ish8n"); set `THUMB_OCR_FAST=1` to trade back.
 
 ### Draft, confirm, send
 
@@ -240,342 +246,88 @@ send_message("Himanshu", "hey")   # or send_whatsapp(...)
 confirm_send()                    # only after they agree
 ```
 
-`confirm_send()` is the fast path: it presses Send on the draft that is already
-on screen rather than rebuilding it, which is **~2s instead of ~20s**. It does
-not screenshot before pressing — the draft was already shown and approved — and
-screenshots after, as proof. If the tap does not register it rebuilds the draft
-and sends it in the same call, without asking twice.
+`send_message` is the most dangerous tool here — a text is irreversible and goes to a real person — so it
+refuses rather than guesses: it proves it is on a blank New Message sheet before typing a recipient
+(iOS resumes Messages *inside* a conversation, which once produced "Rohithi"), clears the body first,
+and fails loudly when no contact matches. WhatsApp does not rank exact matches first ("Rohit" returns
+`Rohit sir COA` before `Rohit`), which is why `send_whatsapp` drafts by default and takes a
+`contact_index`.
 
-Verifying the send needs no OCR: both apps swap the send control for a grey
-mic/audio glyph once the message goes, so a saturated blue/green pixel at the
-send position means the draft is still pending.
+### Running your Expo project on the phone
 
-### One command per app, not one generic "messenger"
-
-Messaging apps look similar and are laid out nothing alike, so each gets its own
-explicitly named command rather than a shared abstraction that fits neither:
-
-| Say | Command |
-|---|---|
-| "text Rohit hi" / "message Rohit on iMessage" | `send_message` |
-| "send Rohit a WhatsApp saying Hi" | `send_whatsapp` |
-| "search Instagram for akshit" | `search_in_app("instagram", …)` |
-
-They share the same *shape* — open → resolve recipient → draft → confirm → send
-— and the same building blocks (`open_app`, `settle`, `wait_for_band`,
-`clear_field`), but each has its own landmarks and steps.
-
-Concretely, why they can't share one implementation:
-
-* **Messages** has no tab bar, its list search is at the *bottom*, and searching
-  matches message *text* rather than contacts — so the sender must go through
-  the compose sheet's `To:` field.
-* **WhatsApp** has a 5-tab bar, a green "+" that opens its own "New chat" sheet
-  with a separate search, and the send button replaces the mic.
-
-**WhatsApp does not rank exact matches first.** Searching "Rohit" returns
-`Rohit sir COA`, `rohit mummy`, `Rohit`, `Tiya Rohit Nepi` — in that order.
-Row 1 is the wrong person. That is exactly why `send_whatsapp` drafts by default
-and takes a `contact_index`: confirm the chat header in the screenshot, then
-re-run with the right row and `send=true`.
-
-### Sending a message safely
-
-`send_message` is the most dangerous shortcut in here — a text is irreversible
-and goes to a real person — so it is built to refuse rather than guess:
-
-* **Drafts by default.** `send=False` composes the message and returns a
-  screenshot showing the resolved recipient and body. You send by calling again
-  with `send=true`.
-* **Proves it is on a blank New Message sheet** before typing a recipient. This
-  is the one that matters: iOS resumes Messages *inside a conversation*, where
-  the `To:` tap does nothing and focus stays on the message body — so the
-  recipient name gets typed into the message. That produced a real garbled
-  send ("Rohit" + "hi" → "Rohithi") during development.
-* **Clears the body first**, so a leftover draft from an aborted run cannot get
-  the new text appended to it.
-* **Fails loudly when no contact matches**, instead of sending to a raw string.
-
-Note it selects the *first* matching contact. If several people share a name,
-the confirmation screenshot is how you check which one it picked.
-
-### Drafts
-
-`thumb/drafts.py` holds flows that are built but **not registered as tools**, so
-the assistant cannot call them. Keeping them out of the tool list is deliberate:
-a shortcut that reports success while doing nothing is worse than no shortcut.
-
-Currently there: **Blinkit** (grocery). Launching, reaching search, locating ADD
-buttons by colour, detecting the pack-size chooser, and stopping at the cart all
-work. It is a draft because taps can land while results are still rendering —
-which opens a product page instead of adding — and because nothing verifies the
-cart count actually went up. The module documents exactly what to fix.
-
-Promote a draft by finishing those checks and adding a `@server.tool` wrapper.
-
-### Tests
-
-```bash
-uv run pytest
+```
+open_expo_app()                     # exp://<mac-lan-ip>:8081, straight into Expo Go
+open_expo_app(use_dev_build=True)   # http:// page, picks "Development Build"
 ```
 
-74 tests, no phone, no mirroring session, no permissions — they cover the pure
-logic where the real bugs lived, and run in about a second. CI runs them on
-macOS for Python 3.11 and 3.13 on every push.
+The phone cannot reach your Mac's `localhost` — on the device that means the phone itself. The flow
+detects the Mac's LAN address and refuses a localhost URL with the right one instead of failing quietly.
 
-What they pin, and why each one exists:
+## 7. Skills: record once, replay after
 
-* **Coordinate mapping.** Every tap flows through `Frame.to_global()`; if it
-  drifts, taps land off-target and it looks like the app ignored them.
-* **Settle / assert / wait.** Three tools shipped reporting success while doing
-  nothing, so `assert_changed` failing loudly is now a test, not a hope.
-* **Keycodes.** A regression test that letters do not all map to keycode 0 —
-  they did, which is how "instagram" arrived on the phone as "aaaaaaaaa".
-* **Text ranking.** `tap_text("Wallet")` must prefer the exact label over a
-  longer string containing it.
-* **App aliases.** "insta" resolves to Instagram, unknown apps fall back
-  instead of failing.
-* **Errors.** Each names the exact System Settings pane and the *host* app, not
-  Python.
-
-Anything needing a real device stays out of the suite deliberately: it would
-make CI impossible and the failures would be about the phone, not the code.
-
-### Skills: record once, replay after
-
-Hand-writing a flow means measuring landmarks for every control it touches.
-Recording lets you demonstrate it instead:
+Hand-writing a flow means measuring landmarks for every control it touches. Recording lets you
+demonstrate it instead:
 
 ```
 start_recording()
-   ...drive the phone by hand...
-stop_recording("open-wifi", app="Settings")
+   ...drive the phone by hand in the mirroring window...
+stop_recording("open-wifi", app="Settings", description="Settings → Wi-Fi")
 
 run_skill("open-wifi")
+list_skills() · get_skill("open-wifi") · delete_skill("open-wifi")
 ```
 
-A skill is a list of **device-point** steps plus the app to open first — no
-pixels, no absolute screen coordinates — so one recorded on a small window
-replays on a zoomed one.
+A skill is a list of **device-point** steps plus the app to open first — no pixels, no absolute screen
+coordinates — so one recorded on a small window replays on a zoomed one. The recorder is listen-only,
+ignores the server's own events (replaying while recording can't record itself), and replay starts from
+the app root and reports any step that changed nothing. Gestures are classified from raw events (tap /
+long press / swipe); consecutive keystrokes collapse into one `type_text`. Skills live in
+`~/.thumb/skills` (`THUMB_SKILLS_DIR` to move them).
 
-Three things make it trustworthy rather than merely plausible:
-
-* **The tap is listen-only.** Recording never alters what you are doing.
-* **Our own events are ignored.** Everything this server posts carries a marker
-  the recorder skips, so replaying a skill while recording cannot record itself
-  and double its own length.
-* **Replay starts at the app root**, then reports any step that changed nothing.
-  Without the reset, a skill can appear to work purely because iOS reopened the
-  app on the screen the recording ended on — which is exactly what the first
-  replay of `open-wifi` did.
-
-Gestures are classified from raw events: a short still press is a tap, a long
-still press is a long press, and movement makes it a swipe regardless of
-duration. Consecutive keystrokes collapse into one `type_text`, split on a long
-pause. Skills live in `~/.thumb/skills` (`THUMB_SKILLS_DIR` to move them).
-
-### Exploring an app
+## 8. Exploring an app
 
 ```
 explore_app("Settings", max_screens=8, max_actions=25, max_depth=3)
 ```
 
-Walks an app breadth-first and returns a map: which screens exist, and which
-control reaches each one. Screens are identified by **the set of text on them**,
-not by pixels, so a clock or a live feed does not make the same screen look new
-on every visit.
+Walks an app breadth-first and returns a map: which screens exist and which control reaches each.
+Screens are identified by the **set of text on them**, not pixels. Nothing matching the deny list is
+ever tapped — send, pay, order, delete, log out, call, anything with a currency symbol or plan wording
+(a live crawl once reached `"$ 75.00 a month"`). Skipped controls are reported. Every action is a real
+tap (~4–6 s each), so it takes minutes, not seconds. Dismiss modals before exploring — an app resumed on
+an upsell sheet traps the crawl inside it.
 
-**Safety is the design constraint.** An explorer that taps everything on a real
-phone sends messages, spends money and deletes things. Nothing matching the deny
-list is ever tapped — send, pay, order, delete, log out, call, and anything
-carrying a currency symbol or plan wording. A live crawl reached
-`"$ 75.00 a month"` before that last rule existed, which is one tap from a
-subscription. The list errs towards over-skipping: a missed screen is cheap.
-Skipped controls are reported, so you can see what it refused to touch.
+## 9. Constraints worth knowing
 
-Every action is a real tap, so it is bounded by screens, actions and depth, and
-takes minutes rather than seconds — roughly 4–6s per action.
+- **Mirroring stops the moment you pick up the phone.** Apple's design. Lock it, set it down,
+  `reconnect()`.
+- **The mirroring window must be visible and unobscured.** Input goes through the system HID event
+  stream, so it lands on whatever is at that screen location. Every input call raises the window first.
+- **Input steals focus and borrows the cursor.** The cursor is restored afterwards; focus is not. Not a
+  fit for running in the background while you type elsewhere.
+- **The phone is real.** Real accounts, real messages, real purchases. Prefer the composite flows over
+  raw `swipe` — they start from safe empty bands and verify each step.
+- **Some iOS gestures are unreachable through mirroring**: Control Centre, Notification Centre,
+  edge-swipe-back, and force-quitting from the App Switcher. Tools for them were removed rather than left
+  doing nothing.
 
-**Known limitation:** it explores whatever the app is showing, and `go_to_root`
-only knows how to use a back chevron. An app resumed on a modal — an upsell
-sheet, a permission prompt — will trap the crawl inside it, which is exactly
-what happened repeatedly against Settings' iCloud upsell. Dismiss modals before
-exploring, and prefer apps opened fresh.
+## 10. Troubleshooting
 
-### Adding a shortcut
+| Symptom | Cause / fix |
+|---|---|
+| `iPhone Mirroring app is not running` | Launch it and connect once by hand |
+| `showing its setup / Welcome screen` | Not paired yet — the first handshake needs the phone and can't be automated |
+| `not streaming … iPhone in Use` | Phone was picked up. Lock it, set it down, `reconnect()` |
+| `window exists but is off-screen` | Un-minimise it / bring it to the current Space (the server tries) |
+| Blank or black screenshots | Screen Recording not granted to the **host** app, or granted but the app wasn't relaunched |
+| Taps do nothing | Accessibility not granted to the **host** app |
+| Taps land in the wrong place | Something is covering the mirroring window |
+| `uvx: command not found` in Claude Desktop | Use the absolute path (`which uvx`) — GUI apps don't see your shell `PATH` |
+| Typed text arrives as `aaaa` / letters trigger shortcuts | You're on an old build; see the keycode notes below and update |
 
-The shortcut system is split so that adding one rarely means writing flow logic:
+Run `device_info()` first whenever something is off — it names the exact pane and host app.
 
-| File | Holds | Edit it when |
-|---|---|---|
-| `landmarks.py` | Positions and per-app layouts, as **screen fractions** | Adding app support or a new UI position |
-| `flows.py` | The step sequences | Adding a genuinely new behaviour |
-| `server.py` | Thin MCP tool wrappers | Exposing a flow as a tool |
-
-**To support a new app**, add one entry to `APP_PROFILES` in `landmarks.py` —
-no other file changes:
-
-```python
-AppProfile("Spotify", search_tab=(2, 3), aliases=("spot",))
-```
-
-`search_tab` is `(slot, total_slots)` in the bottom tab bar; `aliases` are the
-other names a user might say, so "open insta" resolves to Instagram. Unknown
-apps fall back to the generic layout rather than failing.
-
-**To add a new flow**, write a function in `flows.py` taking `session` first and
-returning `(report, image)`, then register a wrapper in `server.py`.
-
-Two rules keep flows reliable:
-
-* Coordinates are **fractions of the screen**, never absolute points, so a
-  shortcut works on every iPhone size.
-* **Verify anything that changes the screen.** Menu commands and taps both
-  no-op silently; a flow that assumes success ends up typing into the wrong
-  screen. Use `settle()` and compare frames (`_changed_since`) rather than
-  trusting a step worked.
-
-### Coordinates
-
-All coordinates are **device points**, origin at the top-left of the phone
-screen — never Mac screen coordinates, and never pixels of the returned image.
-`screenshot()` states the space every time (e.g. `393 x 852`).
-
-The returned image is downscaled to keep token cost sane, so image pixels and
-device points are deliberately *not* 1:1. Use the numbers `screenshot()` reports.
-
-Internally each call re-reads the window bounds, re-derives where the device
-screen sits inside the window, and maps device points through that to global
-screen coordinates. Nothing about the transform is cached, so moving, zooming,
-or re-docking the window mid-session is safe.
-
----
-
-## Constraints worth knowing
-
-**Mirroring stops the moment you pick up the phone.** This is Apple's design,
-not a bug. The window switches to an "iPhone in Use" screen and streaming ends.
-The server detects this and returns an explicit error instead of tapping into a
-dialog. Lock the iPhone, put it down, and call `reconnect()`.
-
-**The mirroring window must be visible and unobscured.** Input is delivered
-through the system HID event stream (see below), so events land on whatever is
-at that screen location. Every input call activates the mirroring app first,
-which raises its window. Don't cover it mid-run.
-
-**Input steals focus and moves the cursor.** Activating the mirroring app takes
-foreground focus from whatever you were doing, and the pointer is borrowed for
-the gesture. The cursor is restored to where it was afterwards, but focus is
-not. This is not a good fit for running in the background while you work.
-
-**The phone is real.** Taps land on a real device with real accounts. Swipes
-that start on a Home Screen icon can rearrange apps if they run long — the
-implementation guards against this (below), and the composite gestures all start
-from safe empty bands, which is another reason to prefer them over raw `swipe`.
-
----
-
-## Implementation notes — things that are silently wrong if done the obvious way
-
-**Typing must press real keycodes.** The tidy way to type is one event with
-keycode 0 carrying a unicode payload via `CGEventKeyboardSetUnicodeString`.
-iPhone Mirroring relays the *keycode* to the phone and drops the unicode string
-— and keycode 0 is the physical `A` key, so every character arrives as `a`, and
-the repeats trip iOS's press-and-hold accent picker. Characters are mapped to
-US-ANSI keycodes with Shift where needed; only characters with no key (emoji,
-accents) fall back to the unicode path.
-
-**Modifier flags must be set explicitly, including to zero.** A synthesised key
-event otherwise inherits the live modifier state, so a Command flag left over
-from an earlier shortcut rides along on ordinary letters. Typing "instagra**m**"
-then delivers Cmd-M and minimises the mirroring window mid-run.
-
-**Launch apps by tapping the Top Hit, not by pressing Return.** Return in
-Spotlight frequently does *not* launch the highlighted app — Spotlight simply
-sits there with the query typed — and the caller then drives a screen it never
-left. Tapping the Top Hit icon is unambiguous.
-
-**Never use Escape to unwind inside an app.** Within an iOS app Escape acts as
-"go back", and a couple of presses drop clean out to the Home Screen. An earlier
-version of the WhatsApp flow opened the app via Spotlight, pressed Escape twice,
-landed on the Home Screen, and then tried to navigate back in. Flows now tap the
-target control and, if it no-ops, back out once with the app's own back chevron
-and retry — self-correcting, and it never leaves the app.
-
-**Confirm by reading the screen, not by how it looks.** Three separate attempts
-to detect iOS's app-handoff alert by appearance all produced false positives:
-screen dimming fired on any dark page, blue-pixel detection fired on a Google
-results page, and matching the URL text anywhere fired while still inside
-Safari's suggestion dropdown — which *displays* what you just typed. It now
-reads the alert's buttons with OCR, and confirms a loaded page by finding the
-host in the address-bar row specifically.
-
-A related trap: Vision often returns the alert's two buttons as one block,
-`"Cancel Open"`. Requiring them as separate labels missed an alert that was
-plainly on screen.
-
-**Apps resume where you left them, and cannot be force-quit.** iOS reopens an
-app exactly as it was — Messages on a half-filled compose sheet, Blinkit deep in
-checkout, Settings on a sub-page — which is the most common reason a sequence of
-taps ends up somewhere unexpected. Force-quitting would be the thorough fix and
-is not available: the App Switcher's swipe-up card dismissal does not register
-through mirroring (measured delta 0.07), the same way vertical drags do not
-scroll. `go_to_root()` backs out with the back chevron instead, which is what is
-actually reachable.
-
-**Some iOS gestures cannot be driven at all.** Control Centre and Notification
-Centre need a swipe that begins *off* the screen edge, which is unreachable
-through mirroring, and the app's View menu offers only Home Screen, App Switcher
-and Spotlight. Tools for them were removed rather than left in place doing
-nothing. Edge-swipe-to-go-back is unreachable for the same reason, so `go_back()`
-taps the app's own back chevron instead.
-
-**Silent no-ops are the failure mode to design against.** Three tools shipped
-looking fine while doing nothing: vertical `scroll`, Spotlight's Return, and the
-handoff-dialog check. `flows.assert_changed()` now fails loudly where a no-op is
-always a bug, and `scroll()` reports when it did not move rather than claiming
-success. When auditing, gate on a known-good action first — a wedged session
-otherwise makes every tool look broken.
-
-**Vertical scrolling needs wheel events and a warped cursor.** A click-drag
-does not scroll iOS lists through mirroring at all — horizontal drags page the
-Home Screen fine, which is what made this so easy to miss, but a vertical drag
-over a list does precisely nothing. Mirroring expects trackpad-style scroll
-events. The second half of the trap: scroll events go to whatever is under the
-*system* cursor, and posting a synthetic mouse-moved event does not move it —
-the cursor has to be warped with `CGWarpMouseCursorPosition`. Without both
-halves, `scroll()` silently no-ops.
-
-**Menu commands need verifying.** `View > Spotlight` pressed straight after
-`Home` frequently no-ops while the Home Screen is still animating. Unverified,
-the caller then types into the Home Screen, which silently does nothing and
-leaves the previous query in the field. `open_spotlight()` checks the screen
-actually changed and falls back to Cmd-3, then to the swipe-down gesture.
-
-**Fields are cleared with backspace, not Cmd-A.** iOS does not honour the
-synthesised Command flag for select-all, so Cmd-A arrives as a literal `a`.
-
-## Two more implementation notes
-
-**Input goes through the HID tap, not `CGEventPostToPid`.** Posting events to
-the mirroring process directly is tidier — it doesn't touch the real cursor —
-but iPhone Mirroring **ignores those events entirely**. Measured against a live
-session, an identical down/up pair produced a frame delta of `0.007` (nothing
-happened) via `CGEventPostToPid` versus `100.18` (the tapped app launched) via
-`CGEventPost(kCGHIDEventTap)`. Apple's client only honours HID-stream events.
-Set `IPHONE_MIRROR_EVENT_TARGET=pid` to force the per-process path if a future
-macOS release starts honouring it.
-
-**Swipes are driven off the wall clock.** A naive `sleep(duration/steps)` loop
-overshoots badly, because posting each event costs real time — a requested 350ms
-gesture measured 485ms. Overshooting past iOS's ~500ms long-press threshold
-turns a Home Screen swipe into an icon *drag*, which silently rearranges apps
-and can merge them into folders. Gestures now track elapsed time and land within
-about 1% of the requested duration.
-
----
-
-## Tuning
+### Tuning
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -584,30 +336,79 @@ about 1% of the requested duration.
 | `IPHONE_MIRROR_TAP_HOLD_MS` | `80` | Mouse-down hold for a tap |
 | `IPHONE_MIRROR_KEY_DELAY_MS` | `12` | Delay between typed characters |
 | `IPHONE_MIRROR_ACTIVATE_DELAY_MS` | `150` | Wait after fronting the app before input |
-| `IPHONE_MIRROR_EVENT_TARGET` | `hid` | `hid` or `pid` (see above) |
+| `IPHONE_MIRROR_EVENT_TARGET` | `hid` | `hid` or `pid` (see implementation notes) |
+| `THUMB_OCR_FAST` | unset | `1` uses Vision's fast recognizer |
+| `THUMB_SKILLS_DIR` | `~/.thumb/skills` | Where recorded skills are stored |
 
-The device model is inferred from the mirrored screen's aspect ratio. Because
-the same nominal size is used both to describe the screenshot and to map taps,
-a near-miss on the exact model is harmless — taps still land where they were
-aimed. Set `IPHONE_MIRROR_DEVICE_SIZE` if you want an exact label.
+## 11. Development
 
----
+```bash
+git clone https://github.com/ishan-crd/thumb-mcp && cd thumb-mcp
+uv sync --dev
+uv run pytest          # pure-logic suite, ~1 s, no phone or permissions needed
+```
 
-## Troubleshooting
+The tests pin the pure logic where the real bugs lived — coordinate mapping, settle/assert, keycodes
+(letters once all mapped to keycode 0, so "instagram" arrived as "aaaaaaaaa"), text ranking, app
+aliases, error messages. CI runs them on macOS for Python 3.11 and 3.13; a `v*` tag publishes to PyPI.
 
-| Symptom | Cause |
+### Layout
+
+| Path | Holds |
 |---|---|
-| "iPhone Mirroring app is not running" | Launch it and connect once by hand |
-| "showing its setup / Welcome screen" | Not paired yet — the first handshake needs the phone and can't be automated |
-| "not streaming ... iPhone in Use" | Phone was picked up. Lock it, set it down, `reconnect()` |
-| "window exists but is off-screen" | Un-minimise it / bring it to the current Space. The server tries to wake it automatically |
-| Blank or black screenshots | Screen Recording not granted to the **host** app, or granted but not relaunched |
-| Taps do nothing | Accessibility not granted to the **host** app |
-| Taps land in the wrong place | Something is covering the mirroring window |
+| `src/thumb/server.py` | The MCP tools — thin wrappers |
+| `src/thumb/flows.py` | Step sequences behind the composite tools |
+| `src/thumb/landmarks.py` | Positions and per-app layouts as **screen fractions** (`APP_PROFILES`) |
+| `src/thumb/drafts.py` | Flows that work but aren't registered as tools yet (Blinkit) |
+| `tests/` | Pure-logic tests |
 
----
+### Adding an app
+
+One entry in `APP_PROFILES` in `landmarks.py`, no other changes:
+
+```python
+AppProfile("Spotify", search_tab=(2, 3), aliases=("spot",))
+```
+
+`search_tab` is `(slot, total_slots)` in the bottom tab bar; `aliases` are the other names someone might
+say.
+
+### Adding a flow
+
+Write a function in `flows.py` taking `session` first and returning `(report, image)`, then register a
+`@server.tool` wrapper in `server.py`. Two rules keep flows reliable: coordinates are **fractions of the
+screen**, never absolute points; and **verify anything that changes the screen** — menu commands and
+taps both no-op silently, so use `settle()` and compare frames rather than trusting a step worked.
+
+## 12. Implementation notes
+
+Things that are silently wrong if done the obvious way — kept here so nobody re-learns them.
+
+- **Typing must press real keycodes.** A unicode-payload event on keycode 0 is relayed as the physical
+  `A` key, so every character arrives as `a`. Characters map to US-ANSI keycodes with Shift; only
+  characters with no key (emoji, accents) use the unicode path.
+- **Modifier flags must be set explicitly, including to zero,** or a leftover Command flag rides along —
+  typing "instagra**m**" once delivered Cmd-M and minimised the mirroring window.
+- **Input goes through the HID tap, not `CGEventPostToPid`.** iPhone Mirroring ignores per-process
+  events entirely (frame delta `0.007` vs `100.18`). `IPHONE_MIRROR_EVENT_TARGET=pid` forces the other
+  path if a future macOS honours it.
+- **Vertical scrolling needs wheel events and a warped cursor.** A vertical click-drag does nothing;
+  scroll events go to whatever is under the *system* cursor, which must be moved with
+  `CGWarpMouseCursorPosition`.
+- **Swipes are driven off the wall clock.** Naive sleeps overshot a 350 ms gesture to 485 ms, past
+  iOS's long-press threshold — which turns a Home Screen swipe into an icon drag that rearranges apps.
+- **Launch apps by tapping the Top Hit, not Return.** Return in Spotlight frequently does nothing.
+- **Never use Escape to unwind inside an app** — it is "go back" and drops out to the Home Screen.
+  Flows back out with the app's own chevron instead.
+- **Confirm by reading the screen, not by how it looks.** Three appearance-based checks for the
+  app-handoff alert all produced false positives; it now OCRs the alert's buttons. Vision often returns
+  two buttons as one block (`"Cancel Open"`).
+- **Apps resume where you left them and cannot be force-quit** through mirroring; `go_to_root()` backs
+  out with the chevron because that is what is reachable.
+- **Fields are cleared with backspace, not Cmd-A** — the synthesised Command flag isn't honoured.
+- **Silent no-ops are the failure mode to design against.** `flows.assert_changed()` fails loudly where a
+  no-op is always a bug, and `scroll()` reports when it did not move.
 
 ## License
 
 MIT
-# thumb-mcp
