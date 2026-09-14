@@ -6,8 +6,12 @@
 
 <p align="center">
   <b>Give your Claude a thumb.</b><br>
-  An open-source MCP server that lets Claude use your iPhone through macOS <b>iPhone Mirroring</b> —
-  see the screen, tap, type, scroll, send messages, run recorded skills.
+  Open-source iPhone MCP for Claude. Tap, type, scroll, run skills — from the terminal.<br>
+  Drives your phone through macOS <b>iPhone Mirroring</b>: no jailbreak, no dev profile, nothing installed on the iPhone.
+</p>
+
+<p align="center">
+  <code>claude mcp add thumb -- uvx thumb-mcp</code>
 </p>
 
 <p align="center">
@@ -71,14 +75,15 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ## 2. Install
 
-**Straight from GitHub, no clone** — `uvx` fetches, builds and caches it on first use:
+Nothing to install by hand — `uvx` fetches the package from PyPI and caches it the first time a client
+starts it. To see it run on its own:
 
 ```bash
-uvx --from git+https://github.com/ishan-crd/thumb-mcp thumb-mcp
+uvx thumb-mcp
 ```
 
-That starts the server on stdio (it waits for an MCP client — that's normal; `Ctrl-C` to stop). The
-same command goes into your Claude config in step 4.
+It starts the server on stdio and waits for an MCP client — that's normal; `Ctrl-C` to stop. Step 4 puts
+the same command into Claude.
 
 **From a checkout**, to hack on it:
 
@@ -88,7 +93,8 @@ uv sync
 uv run thumb-mcp
 ```
 
-> Once the package is on PyPI, `uvx thumb-mcp` is all you need.
+> Want the very latest commit instead of the release? `uvx --from git+https://github.com/ishan-crd/thumb-mcp thumb-mcp`
+> works anywhere `uvx thumb-mcp` does.
 
 ## 3. Grant permissions
 
@@ -107,7 +113,7 @@ relaunch):
 Not sure which app is the host? Ask the server — it names it:
 
 ```bash
-uv run --with git+https://github.com/ishan-crd/thumb-mcp python -c "import thumb.server as s; print(s.device_info())"
+uv run --with thumb-mcp python -c "import thumb.server as s; print(s.device_info())"
 # or from a checkout:
 uv run python -c "import thumb.server as s; print(s.device_info())"
 ```
@@ -120,7 +126,7 @@ the phone is currently streaming. Fix anything it reports before continuing.
 **Claude Code** (one command, remembered per machine):
 
 ```bash
-claude mcp add thumb -- uvx --from git+https://github.com/ishan-crd/thumb-mcp thumb-mcp
+claude mcp add thumb -- uvx thumb-mcp
 ```
 
 From a checkout instead:
@@ -137,7 +143,7 @@ claude mcp add thumb -- uv --directory /absolute/path/to/thumb-mcp run thumb-mcp
   "mcpServers": {
     "thumb": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/ishan-crd/thumb-mcp", "thumb-mcp"]
+      "args": ["thumb-mcp"]
     }
   }
 }
