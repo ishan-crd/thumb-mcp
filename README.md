@@ -2,8 +2,6 @@
   <img src="assets/logo.png" alt="thumb MCP" width="200">
 </p>
 
-<h1 align="center">thumb</h1>
-
 <p align="center">
   <b>Give your Claude a thumb.</b><br>
   Open-source iPhone MCP for Claude. Tap, type, scroll, run skills — from the terminal.<br>
