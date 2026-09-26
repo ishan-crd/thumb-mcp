@@ -37,7 +37,7 @@ export const Command: React.FC<{ text?: string; size?: "lg" | "md"; onCopy?: () 
   const [copied, copy] = useCopy(text, onCopy);
   return (
     <button className={`cmd cmd-${size}${copied ? " copied" : ""}`} onClick={copy} aria-label={`Copy: ${text}`}>
-      <span className="cmd-text"><span className="cmd-dollar">$</span> {text}<span className="cmd-caret" aria-hidden /></span>
+      <span className="cmd-text"><span className="cmd-dollar">$</span> {text.split(" ").map((w, i) => <React.Fragment key={i}>{i > 0 && " "}<span className="nb">{w}</span></React.Fragment>)}<span className="cmd-caret" aria-hidden /></span>
       <span className="cmd-copy"><CopyIcon done={copied} /><span>{copied ? "Copied" : "Copy"}</span></span>
     </button>
   );
